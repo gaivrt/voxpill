@@ -53,6 +53,41 @@ After the first setup, `start-voicekey.bat` provides a convenient launcher.
 > The model download is roughly 320 MiB. Model weights are intentionally not
 > stored in this Git repository.
 
+## Start with Windows
+
+First confirm that `start-voicekey-hidden.vbs` launches VoxPill correctly. Then
+press **Win+R**, enter `shell:startup`, and create a shortcut to that VBS file
+inside the Startup folder.
+
+> Create a **shortcut** to the original VBS file. Do not copy the VBS itself
+> into the Startup folder, because it locates `start-voicekey.bat` relative to
+> its own project directory.
+
+You can also create the shortcut automatically. Open PowerShell in the VoxPill
+project directory and run:
+
+```powershell
+$project = (Get-Location).Path
+$startup = [Environment]::GetFolderPath("Startup")
+$shell = New-Object -ComObject WScript.Shell
+$link = $shell.CreateShortcut((Join-Path $startup "VoxPill.lnk"))
+$link.TargetPath = "$env:SystemRoot\System32\wscript.exe"
+$link.Arguments = '"' + (Join-Path $project "start-voicekey-hidden.vbs") + '"'
+$link.WorkingDirectory = $project
+$link.Description = "VoxPill offline voice typing"
+$link.Save()
+```
+
+Double-click `VoxPill.lnk` once to test it. VoxPill should appear in the system
+tray without opening a console window. To disable startup, open `shell:startup`
+and delete only `VoxPill.lnk`.
+
+If Windows starts an older build, open the shortcut properties and check its
+target. Remove shortcuts that point to an obsolete path such as
+`dist\voicekey\voicekey.exe`; the current source launcher should reference
+`start-voicekey-hidden.vbs` in this repository. Recreate the shortcut whenever
+the project directory is moved.
+
 ## Use
 
 ```text

@@ -1,7 +1,7 @@
 ---
 title: Wiki Log
 type: workflow
-updated: 2026-07-21 17:21
+updated: 2026-07-21 18:53
 ---
 
 # Wiki Log
@@ -61,6 +61,10 @@ pill 移至 active monitor 工作区底部向上 22 DIP，并为浅色/深色主
 ## [2026-07-21 17:21] ingest | VoxPill 公开仓库准备
 
 项目品牌更新为 VoxPill，新增公开 README、静态 hero 与轻量交互 GIF；公开仓库排除模型权重和本地运行产物，并记录首次运行通过 downloader 获取 streaming ASR 与标点资产。
+
+## [2026-07-21 18:53] ingest | Windows 开机自启教学
+
+README 新增 Startup 图形操作、PowerShell 自动创建、关闭与旧版本排查教学；项目全景同步记录快捷方式必须指向项目内隐藏启动 VBS，而不是旧 portable 路径。
 
 ## See Also
 

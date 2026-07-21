@@ -1,7 +1,7 @@
 ---
 title: VoxPill 项目全景
 type: overview
-updated: 2026-07-21 17:21
+updated: 2026-07-21 18:53
 ---
 
 # VoxPill 项目全景
@@ -56,7 +56,7 @@ VoxPill 是一个常驻 Windows 的轻量离线语音输入工具。用户稳定
 
 ## 配置与交付
 
-overlay 默认在每次 show 时读取 Windows `AppsUseLightTheme`：浅色使用暖白 `#faf9f5` 与深灰内容，深色使用纯黑与暖白内容；也可通过 `overlay.theme` 强制 `light` 或 `dark`。两套主题都使用 1 DIP 极低透明度暖灰边框，不包含渐变或投影。源码入口为 `uv run python -u main.py`，`start-voicekey.bat` 提供 Windows 前台启动，`start-voicekey-hidden.vbs` 用于无窗口自启动。PyInstaller 以 onedir、windowed 方式生成 `dist\\VoxPill\\VoxPill.exe`，同时收集配置、模型和 sherpa-onnx 运行文件。
+overlay 默认在每次 show 时读取 Windows `AppsUseLightTheme`：浅色使用暖白 `#faf9f5` 与深灰内容，深色使用纯黑与暖白内容；也可通过 `overlay.theme` 强制 `light` 或 `dark`。两套主题都使用 1 DIP 极低透明度暖灰边框，不包含渐变或投影。源码入口为 `uv run python -u main.py`，`start-voicekey.bat` 提供 Windows 前台启动，`start-voicekey-hidden.vbs` 用于无窗口启动。开机自启应在 `shell:startup` 中创建指向项目内 VBS 的 `VoxPill.lnk`，不能复制 VBS 本体；项目移动后需重建快捷方式，并移除仍指向 `dist\\voicekey\\voicekey.exe` 的旧入口。PyInstaller 以 onedir、windowed 方式生成 `dist\\VoxPill\\VoxPill.exe`，同时收集配置、模型和 sherpa-onnx 运行文件。
 
 ## 当前工程状态
 
