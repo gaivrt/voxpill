@@ -1,7 +1,7 @@
 # VoxPill
 
 <p align="center">
-  <img src="docs/assets/voxpill-demo.gif" alt="VoxPill streaming voice typing demo" width="100%">
+  <img src="docs/assets/voxpill-hero.png" alt="VoxPill light and dark voice typing overlay" width="100%">
 </p>
 
 **Speak. Release. Typed.**
@@ -24,6 +24,12 @@ dark theme, and disappears after the text is committed.
 - **Focus-safe commit** — the final text returns to the window active when recording began.
 - **Native 60 Hz overlay** — per-pixel alpha, no focus stealing, light/dark auto theme.
 - **Small runtime** — CPU-only `sherpa-onnx`; no PyTorch, CUDA, or cloud service.
+
+## Demo
+
+<p align="center">
+  <img src="docs/assets/voxpill-demo.gif" alt="VoxPill streaming voice typing demo" width="100%">
+</p>
 
 ## Quick start
 
