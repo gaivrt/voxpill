@@ -1,4 +1,12 @@
-# VoxPill
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/voxpill-icon-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/voxpill-icon-light.svg">
+    <img src="docs/assets/voxpill-icon-light.svg" alt="VoxPill icon" width="88" height="88">
+  </picture>
+</p>
+
+<h1 align="center">VoxPill</h1>
 
 <p align="center">
   <img src="docs/assets/voxpill-hero.png" alt="VoxPill light and dark voice typing overlay" width="100%">

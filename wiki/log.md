@@ -1,7 +1,7 @@
 ---
 title: Wiki Log
 type: workflow
-updated: 2026-07-21 18:53
+updated: 2026-07-21 22:54
 ---
 
 # Wiki Log
@@ -65,6 +65,14 @@ pill 移至 active monitor 工作区底部向上 22 DIP，并为浅色/深色主
 ## [2026-07-21 18:53] ingest | Windows 开机自启教学
 
 README 新增 Startup 图形操作、PowerShell 自动创建、关闭与旧版本排查教学；项目全景同步记录快捷方式必须指向项目内隐藏启动 VBS，而不是旧 portable 路径。
+
+## [2026-07-21 22:54] ingest | VoxPill 托盘标识
+
+托盘视觉从蓝/橙麦克风改为黑色 pill 与五段声纹，增加明暗任务栏均可辨认的暖灰边框；录音态只高亮声纹，tooltip 精简为产品名。
+
+## [2026-07-21 23:06] ingest | 自适应圆球托盘图标
+
+托盘标识收敛为无边框圆球与单帧五段声纹，移除胶囊、描边和彩色状态；浅色与深色配色跟随 Windows app theme，并在常驻轮询中每秒自动刷新。
 
 ## See Also
 

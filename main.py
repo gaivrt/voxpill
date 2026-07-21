@@ -185,7 +185,13 @@ def main():
     say(f"\n就绪 — 按住 {key_name} 说话，松开提交。\n")
 
     work = queue.Queue()
-    st = {"stream": None, "icon": None, "job": None}
+    st = {
+        "stream": None,
+        "icon": None,
+        "job": None,
+        "icon_active": False,
+        "icon_dark": None,
+    }
     stop_flag = threading.Event()
     cleanup_started = threading.Event()
     session_ids = itertools.count(1)
@@ -206,11 +212,16 @@ def main():
         thread.start()
         return thread
 
-    def set_icon(active):
+    def set_icon(active=None, *, force=False):
+        state_changed = active is not None and bool(active) != st["icon_active"]
+        if active is not None:
+            st["icon_active"] = bool(active)
+        dark = tray.system_prefers_dark()
         ic = st["icon"]
-        if ic is not None:
+        if ic is not None and (force or state_changed or dark != st["icon_dark"]):
             try:
-                ic.icon = tray.make_image(active)   # idle 蓝 / 录音橙
+                ic.icon = tray.make_image(st["icon_active"], dark=dark)
+                st["icon_dark"] = dark
             except Exception:
                 pass
 
@@ -292,8 +303,12 @@ def main():
     def poll_loop():
         # 直接读物理键态：松开就一定停，免疫丢失的 keyup（stuck-key）。
         gate = HotkeyGate(HOTKEY_STABLE_S, MOUSE_GUARD_S)
+        next_theme_check = 0.0
         while not stop_flag.is_set():
             checked_at = time.perf_counter()
+            if checked_at >= next_theme_check:
+                set_icon()
+                next_theme_check = checked_at + 1.0
             left = key_down(VK_LBUTTON)
             now = key_down(hotkey_vk)
             action = gate.update(checked_at, now, left)
@@ -392,13 +407,17 @@ def main():
             cleanup()
             icon.stop()
 
-        title = f"VoxPill · 按住 {key_name} 流式听写"
+        title = tray.TOOLTIP
         menu = pystray.Menu(
             pystray.MenuItem(title, None, enabled=False),
             pystray.MenuItem("退出", on_quit),
         )
-        icon = pystray.Icon("voxpill", tray.make_image(False), title, menu)
+        initial_dark = tray.system_prefers_dark()
+        icon = pystray.Icon(
+            "voxpill", tray.make_image(False, dark=initial_dark), title, menu
+        )
         st["icon"] = icon
+        st["icon_dark"] = initial_dark
         try:
             icon.run()          # 阻塞主线程直到 on_quit
         finally:

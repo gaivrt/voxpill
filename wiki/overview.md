@@ -1,7 +1,7 @@
 ---
 title: VoxPill 项目全景
 type: overview
-updated: 2026-07-21 18:53
+updated: 2026-07-21 23:06
 ---
 
 # VoxPill 项目全景
@@ -34,13 +34,15 @@ VoxPill 是一个常驻 Windows 的轻量离线语音输入工具。用户稳定
 | `asr.py` | 验证模型文件，初始化 sherpa-onnx online recognizer 和 punctuation pipeline，在共享锁内管理增量 decode、final flush 与标点恢复 |
 | `overlay.py` | 运行独立 Win32 UI thread 和 60 Hz ticker，以 per-pixel alpha 在当前显示器底部中央绘制自动明暗 pill |
 | `inject.py` | 封装 Win32 `SendInput`、Unicode 字符事件和剪贴板粘贴路径 |
-| `tray.py` | 生成蓝色空闲态和橙色录音态托盘图标 |
+| `tray.py` | 生成透明画布上的极简圆球与五段声纹托盘图标，并读取 Windows app theme 选择明暗配色 |
 | `config.toml` | 定义热键、注入方式、剪贴板恢复、自动回车、最短录音和麦克风设备 |
 | `models/` | 保存 Paraformer ASR 与 CT-Transformer 标点模型及 token 数据 |
 
 ## 运行模型
 
 应用采用多线程常驻结构：主线程运行 Windows 托盘消息循环；轮询线程每 20 ms 读取热键物理状态；PortAudio callback 只复制音频 chunk；每轮 decode worker 完成增量识别，并与 final 标点恢复共用同一把锁；消费线程等待 punctuated final、恢复目标 HWND 并执行一次文本注入；overlay UI thread 处理 Win32 消息，独立 ticker 以 60 Hz 投递动画 frame。应用跟踪 poll、consumer 和 decode workers，cleanup 会发出停止信号、结束活跃 stream 并限时 join workers 后再关闭 overlay。若托盘依赖不可用，应用退化为主线程消费队列并通过 Ctrl+C 退出。
+
+托盘 tooltip 和禁用菜单标题均只显示产品名 `VoxPill`，不重复热键或录音说明。图标在 8× supersampling 下绘制后缩放到 64 px，由 Windows 继续适配 16–32 px notification area。图标只有圆形底面与五段声纹：浅色主题使用暖白球与深色声纹，深色主题使用黑球与暖白声纹；录音态仅切换到另一帧声纹。常驻轮询每秒检查一次 Windows app theme，无需重启即可自动更新托盘图标。
 
 使用 `GetAsyncKeyState` 读取真实物理键态，是避免窗口焦点变化或 `keyup` 事件丢失后持续录音的关键设计。命名 mutex `Local\\GAIVR.VoxPill` 用于阻止多个进程同时加载模型。
 
