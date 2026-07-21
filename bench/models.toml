@@ -1,0 +1,33 @@
+[models.current_paraformer]
+label = "Current offline Paraformer (baseline)"
+kind = "offline_paraformer"
+true_streaming = false
+threads = 2
+model = "models/asr/model.int8.onnx"
+tokens = "models/asr/tokens.txt"
+
+[models.streaming_paraformer]
+label = "Streaming Paraformer bilingual zh-en"
+kind = "online_paraformer"
+true_streaming = true
+threads = 2
+source_page = "https://k2-fsa.github.io/sherpa/onnx/pretrained_models/online-paraformer/paraformer-models.html"
+download_base = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/main"
+download_mirror_base = "https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/main"
+download_dir = "models/asr-streaming"
+download_files = ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt"]
+encoder = "models/asr-streaming/encoder.int8.onnx"
+decoder = "models/asr-streaming/decoder.int8.onnx"
+tokens = "models/asr-streaming/tokens.txt"
+required = ["encoder", "decoder", "tokens"]
+
+[assets.punctuation]
+label = "CT-Transformer bilingual punctuation"
+source_page = "https://huggingface.co/ranger810/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8"
+download_base = "https://huggingface.co/ranger810/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/resolve/main"
+download_mirror_base = "https://hf-mirror.com/ranger810/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/resolve/main"
+download_dir = "models/punctuation"
+download_files = ["model.int8.onnx", "tokens.json"]
+model = "models/punctuation/model.int8.onnx"
+tokens = "models/punctuation/tokens.json"
+required = ["model", "tokens"]

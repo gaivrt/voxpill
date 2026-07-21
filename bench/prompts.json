@@ -1,0 +1,62 @@
+[
+  {
+    "id": "zh-short",
+    "category": "zh",
+    "text": "今天天气不错，我准备下午出去走一走。"
+  },
+  {
+    "id": "zh-conversation",
+    "category": "zh",
+    "text": "说实话，我刚开始也不太确定，不过仔细想一想，这个方案应该能够解决问题。"
+  },
+  {
+    "id": "zh-technical",
+    "category": "zh",
+    "text": "这个程序会持续读取麦克风数据，在检测到停顿以后完成识别，然后把文字写入当前窗口。"
+  },
+  {
+    "id": "zh-long",
+    "category": "zh",
+    "text": "如果一次说话持续很长时间，我们不仅要关注最终识别是否准确，还要观察第一个结果什么时候出现，处理过程中占用了多少内存，以及停顿以后还需要等待多久。"
+  },
+  {
+    "id": "en-short",
+    "category": "en",
+    "text": "The weather looks good today, so I might take a walk this afternoon."
+  },
+  {
+    "id": "en-conversation",
+    "category": "en",
+    "text": "To be honest, I was not completely sure at first, but this approach should solve the problem."
+  },
+  {
+    "id": "en-technical",
+    "category": "en",
+    "text": "The application reads microphone samples, runs speech recognition, and inserts the final text into the active window."
+  },
+  {
+    "id": "en-long",
+    "category": "en",
+    "text": "When someone speaks continuously for a long time, the benchmark should measure accuracy, time to the first partial result, processing speed, and peak memory usage."
+  },
+  {
+    "id": "mixed-natural",
+    "category": "mixed",
+    "text": "这个 benchmark 主要比较 accuracy、latency 和 memory usage。"
+  },
+  {
+    "id": "mixed-code",
+    "category": "mixed",
+    "text": "我准备先运行 unit tests，然后 build 一个 portable version。"
+  },
+  {
+    "id": "mixed-product",
+    "category": "mixed",
+    "text": "VoxPill should support 中文输入 and English dictation without switching models."
+  },
+  {
+    "id": "mixed-long",
+    "category": "mixed",
+    "text": "如果 streaming ASR 的 partial result 一直变化，the application should only commit stable text，otherwise the active editor may contain duplicated words."
+  }
+]

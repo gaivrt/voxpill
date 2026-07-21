@@ -1,0 +1,20 @@
+# VoxPill 配置 — 改完保存即可，下次启动生效。
+
+[hotkey]
+# 按住哪个键录音、松开转写（push-to-talk，单键）。
+key = "ctrl_r"      # 右 Ctrl。也支持 ctrl_l / alt_r / alt_l / shift_r / ` / f1..f12
+
+[overlay]
+# auto 跟随 Windows 应用主题；也可强制 light 或 dark。
+theme = "auto"
+
+[behavior]
+# 注入方式：paste = 剪贴板+Ctrl+V（微信等 IME 应用更稳，不会标点重复）；
+#           unicode = 逐字符 SendInput（更通用，但个别应用会字符重复）
+inject_method = "paste"
+restore_clipboard = false  # false 最可靠：识别文本会留在剪贴板，避免异步粘贴读到旧内容
+auto_enter = false  # 转写后是否自动回车发送（全局默认 false，只打字不发送）
+min_seconds = 0.3   # 短于此时长的录音直接忽略
+
+[audio]
+device = ""         # 麦克风设备名或编号；留空 = 系统默认输入设备

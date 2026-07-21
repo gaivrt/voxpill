@@ -1,0 +1,68 @@
+---
+title: Wiki Log
+type: workflow
+updated: 2026-07-21 17:21
+---
+
+# Wiki Log
+
+## [2026-07-21 11:36] init | Wiki 初始化
+
+创建 `SCHEMA.md`、`wiki/index.md`、`wiki/log.md` 和 `wiki/overview.md`，并定义 architecture、operations、assets 与 decisions 四类专题目录。
+
+## [2026-07-21 12:50] ingest | ASR benchmark 工作流
+
+新增 `operations/asr-benchmark.md`，记录候选模型矩阵、录音与隔离 benchmark 流程、指标语义及下载校验边界，并更新索引。
+
+## [2026-07-21 12:58] ingest | ASR benchmark 公平性与 review
+
+补充英文跨语言 hallucination 的 WER 规则、加权 RTF 与 online flush 口径；governed review 在两项 blocker 修复后获得 PASS。
+
+## [2026-07-21 14:02] review | Windows benchmark 实跑
+
+12 条真人语料完成四模型正式运行；修复并回归验证 Windows peak working set 采集，focused review PASS。结果属于 runtime artifact，不 ingest 为持久模型结论。
+
+## [2026-07-21 15:11] ingest | 流式输入与自适应 overlay
+
+新增 `architecture/runtime-pipeline.md`，并更新项目全景与索引，记录 bilingual streaming Paraformer、右 Alt 生命周期、partial-only 预览、final 单次注入及 per-pixel 多显示器浮窗行为。
+
+## [2026-07-21 15:14] ingest | Schema 运行结构同步
+
+同步 `SCHEMA.md` 的项目定义与文件角色，使入口、ASR、overlay、默认热键和模型目录说明与当前 streaming 主链路一致。
+
+## [2026-07-21 15:30] ingest | 目标恢复与 Dynamic Island 生命周期
+
+更新 schema、项目全景、运行链路与索引，记录 target HWND 恢复、60 Hz ticker、日夜主题、anchor monitor DPI、共享推理锁和 worker join 行为。
+
+## [2026-07-21 15:32] ingest | 轻量主题采样
+
+更新运行链路，记录 auto 主题改用 anchor 上方三点 Win32 像素采样，不再使用桌面截图与模糊阻塞首帧。
+
+## [2026-07-21 16:20] ingest | 纯黑浮窗与 caret 定位
+
+同步右 Ctrl、partial 标点、单 session 尺寸单调增长、纯黑无投影视觉，以及 Win32、MSAA、UI Automation caret 定位和 focused-window 降级链路。
+
+## [2026-07-21 16:24] ingest | 单行居中 partial
+
+浮窗移除双行布局；超长 partial 改为左侧省略、保留最新文字，并将声纹与可见文字作为整体水平居中，消除 revision 导致的换行跳动。
+
+## [2026-07-21 16:38] ingest | 点击防误触与顶部居中
+
+新增热键稳定窗口和 mouse guard，过滤连续左键点击产生的短伪脉冲；浮窗改为 active monitor 顶部整体居中，并移除首个 partial 的展开等待阈值。
+
+## [2026-07-21 16:45] ingest | Windows 自动明暗主题
+
+overlay 在每次 show 时读取 Windows app theme：浅色使用暖白/深灰，深色保持纯黑/暖白，同时保留 light、dark 强制配置。
+
+## [2026-07-21 16:51] ingest | 底部居中与极浅边框
+
+pill 移至 active monitor 工作区底部向上 22 DIP，并为浅色/深色主题增加 1 DIP 极低透明度暖灰边框，改善与相近背景的分离。
+
+## [2026-07-21 17:21] ingest | VoxPill 公开仓库准备
+
+项目品牌更新为 VoxPill，新增公开 README、静态 hero 与轻量交互 GIF；公开仓库排除模型权重和本地运行产物，并记录首次运行通过 downloader 获取 streaming ASR 与标点资产。
+
+## See Also
+
+- [Overview](overview.md) — 当前项目全景。
+- [Wiki Schema](../SCHEMA.md) — Wiki 维护规范。

@@ -1,0 +1,28 @@
+# Python environments and caches
+.venv/
+.venv-*/
+__pycache__/
+*.py[cod]
+
+# Runtime and packaging output
+build/
+dist/
+*.log
+
+# Model weights and generated download receipts
+models/*
+!models/README.md
+bench/model_cache/*
+!bench/model_cache/.gitignore
+
+# Personal recordings and benchmark output
+bench/corpus/audio/
+bench/results/*
+!bench/results/.gitignore
+*.wav
+
+# Editor and OS metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
