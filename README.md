@@ -161,3 +161,7 @@ These are reference measurements, not hardware-independent guarantees.
 VoxPill is built on [`sherpa-onnx`](https://github.com/k2-fsa/sherpa-onnx) and
 the quantized Paraformer and CT-Transformer models listed in
 [`models/README.md`](models/README.md).
+
+## Friends
+
+- [LINUX DO](https://linux.do/) — Where possible begins.
