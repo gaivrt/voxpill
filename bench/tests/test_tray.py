@@ -20,6 +20,7 @@ class TrayIconTest(unittest.TestCase):
         self.assertIsNotNone(box)
         left, top, right, bottom = box
         self.assertEqual(right - left, bottom - top)
+        self.assertGreaterEqual(right - left, 62)
         self.assertLessEqual(abs((left + right - 1) / 2 - 31.5), 0.5)
         self.assertLessEqual(abs((top + bottom - 1) / 2 - 31.5), 0.5)
 

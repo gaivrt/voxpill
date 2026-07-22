@@ -1,7 +1,7 @@
 ---
 title: VoxPill 项目全景
 type: overview
-updated: 2026-07-21 23:06
+updated: 2026-07-22 10:17
 ---
 
 # VoxPill 项目全景
@@ -42,7 +42,7 @@ VoxPill 是一个常驻 Windows 的轻量离线语音输入工具。用户稳定
 
 应用采用多线程常驻结构：主线程运行 Windows 托盘消息循环；轮询线程每 20 ms 读取热键物理状态；PortAudio callback 只复制音频 chunk；每轮 decode worker 完成增量识别，并与 final 标点恢复共用同一把锁；消费线程等待 punctuated final、恢复目标 HWND 并执行一次文本注入；overlay UI thread 处理 Win32 消息，独立 ticker 以 60 Hz 投递动画 frame。应用跟踪 poll、consumer 和 decode workers，cleanup 会发出停止信号、结束活跃 stream 并限时 join workers 后再关闭 overlay。若托盘依赖不可用，应用退化为主线程消费队列并通过 Ctrl+C 退出。
 
-托盘 tooltip 和禁用菜单标题均只显示产品名 `VoxPill`，不重复热键或录音说明。图标在 8× supersampling 下绘制后缩放到 64 px，由 Windows 继续适配 16–32 px notification area。图标只有圆形底面与五段声纹：浅色主题使用暖白球与深色声纹，深色主题使用黑球与暖白声纹；录音态仅切换到另一帧声纹。常驻轮询每秒检查一次 Windows app theme，无需重启即可自动更新托盘图标。
+托盘 tooltip 和禁用菜单标题均只显示产品名 `VoxPill`，不重复热键或录音说明。图标在 8× supersampling 下绘制后缩放到 64 px，由 Windows 继续适配 16–32 px notification area；圆球直径占 64 px 画布中的 62 px，以充分利用 Windows 的小尺寸托盘槽位。图标只有圆形底面与五段声纹：浅色主题使用暖白球与深色声纹，深色主题使用黑球与暖白声纹；录音态仅切换到另一帧声纹。常驻轮询每秒检查一次 Windows app theme，无需重启即可自动更新托盘图标。
 
 使用 `GetAsyncKeyState` 读取真实物理键态，是避免窗口焦点变化或 `keyup` 事件丢失后持续录音的关键设计。命名 mutex `Local\\GAIVR.VoxPill` 用于阻止多个进程同时加载模型。
 

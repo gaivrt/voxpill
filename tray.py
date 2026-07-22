@@ -50,13 +50,13 @@ def make_image(active: bool = False, *, dark: bool | None = None):
         "RGBA", (_SIZE * _SCALE, _SIZE * _SCALE), (0, 0, 0, 0)
     )
     draw = ImageDraw.Draw(canvas)
-    draw.ellipse(_scaled_box((6, 6, 58, 58)), fill=orb)
+    draw.ellipse(_scaled_box((1, 1, 63, 63)), fill=orb)
 
     # Two captured waveform poses make the state change feel alive without
     # adding badges, colors, borders, or a second visual language.
-    heights = (12, 23, 16, 25, 12) if active else (10, 18, 26, 18, 10)
-    centers = (21, 26.5, 32, 37.5, 43)
-    bar_width = 3.25
+    heights = (16, 31, 21, 34, 16) if active else (14, 24, 34, 24, 14)
+    centers = (18, 25, 32, 39, 46)
+    bar_width = 4.0
     for center_x, height in zip(centers, heights):
         draw.rounded_rectangle(
             _scaled_box(

@@ -74,6 +74,10 @@ README 新增 Startup 图形操作、PowerShell 自动创建、关闭与旧版�
 
 托盘标识收敛为无边框圆球与单帧五段声纹，移除胶囊、描边和彩色状态；浅色与深色配色跟随 Windows app theme，并在常驻轮询中每秒自动刷新。
 
+## [2026-07-22 10:17] ingest | 放大托盘圆球
+
+圆球直径由 52 px 提升至 62 px，并同步放大五段声纹，充分利用 Windows 16–32 px notification area 的可见空间。
+
 ## See Also
 
 - [Overview](overview.md) — 当前项目全景。
