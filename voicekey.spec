@@ -1,7 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('models', 'models'), ('config.toml', '.')]
+datas = [
+    ('models/asr', 'models/asr'),
+    ('models/punctuation', 'models/punctuation'),
+    ('config.toml', '.'),
+    ('qwen_final.py', '.'),
+]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('sherpa_onnx')

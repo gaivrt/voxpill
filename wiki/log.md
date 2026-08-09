@@ -78,6 +78,34 @@ README 新增 Startup 图形操作、PowerShell 自动创建、关闭与旧版�
 
 圆球直径由 52 px 提升至 62 px，并同步放大五段声纹，充分利用 Windows 16–32 px notification area 的可见空间。
 
+## [2026-08-08 22:25] ingest | Qwen3-ASR GPU 资格测试
+
+新增固定 revision 的 Qwen3-ASR 0.6B HF 隔离 benchmark、CUDA/VRAM 指标与下载 receipt；12 条同语料实跑支持 streaming Paraformer partial + Qwen final-pass 的双阶段方案。
+
+## [2026-08-08 22:35] fix | 固定录音 ground truth
+
+恢复 `mixed-product` 录音时的旧品牌 reference，并用测试锁定；重新运行 Qwen 资格测试，确保与历史 Paraformer baseline 使用同一 ground truth。
+
+## [2026-08-08 23:43] validate | Qwen Windows 原生资格测试
+
+独立 Windows Python 3.11 runtime 完成 Qwen CUDA smoke 与 12 条同语料 benchmark；准确率与 WSL 一致，同步计时记录 8.91 秒加载、0.160 corpus RTF、2.31 GB RAM 和 1.98 GB Torch reserved VRAM，生产环境测试 34/34 通过。
+
+## [2026-08-08 23:59] ingest | Qwen final-pass 生产接入
+
+生产链路新增独立 Windows Qwen 子进程后台预加载、本地 request-ID IPC、有界 PCM、timeout/restart 与 Paraformer fallback；保留 streaming partial、目标窗口恢复和恰好一次注入语义。
+
+## [2026-08-09 00:19] ingest | Qwen 单模型伪流式与 lazy fallback
+
+生产预览改为同一 Qwen worker 周期重识别累积音频，final 请求优先于等待 preview；移除 streaming Paraformer 常驻链路，static Paraformer 与标点模型仅在 Qwen 确认失败后懒加载，portable 不再打包 streaming 权重。
+
+## [2026-08-09 13:05] ingest | 可取消 Qwen preview
+
+VAD 分句实验因英文 WER 显著退化而拒绝；生产改为 1 秒 cadence 的累积 preview，松键通过 request-ID 旁路 cancel 中止 active generation，再执行保持 baseline 准确率的完整录音 final。
+
+## [2026-08-09 13:16] review | Qwen cancellable preview PASS
+
+独立审查确认旁路取消只作用于 active preview，不会发布 stale partial、误取消 final、触发 Qwen restart 或加载 Paraformer；Windows tests、长音频 smoke 与真实麦克风验收均通过。
+
 ## See Also
 
 - [Overview](overview.md) — 当前项目全景。

@@ -1,14 +1,14 @@
 ---
-title: 流式语音输入运行链路
+title: 伪流式语音输入运行链路
 type: workflow
-updated: 2026-07-21 17:21
+updated: 2026-08-09 13:05
 ---
 
-# 流式语音输入运行链路
+# 伪流式语音输入运行链路
 
 ## 用户交互语义
 
-VoxPill 默认把右 Ctrl 作为 push-to-talk 热键。右 Ctrl 连续稳定 60 ms 后，应用保存当前 foreground HWND、创建一轮独立 session、开始采集 16 kHz 单声道 PCM，并在当前显示器底部中央显示不抢焦点的自动明暗 pill；按住期间，bilingual streaming Paraformer 持续解码，partial 经 CT-Transformer 恢复标点后只用于更新浮窗，不写入目标应用。松开右 Ctrl 后停止采集并 flush recognizer；满足最短录音时长且 final 非空时，应用先恢复录音开始时的目标 HWND，再把 final 只注入一次，注入完成后浮窗才收束消失。
+VoxPill 默认把右 Ctrl 作为 push-to-talk 热键。右 Ctrl 连续稳定 60 ms 后，应用保存当前 foreground HWND、创建一轮独立 session、开始采集 16 kHz 单声道 PCM，并在当前显示器底部中央显示不抢焦点的自动明暗 pill。按住期间，同一个 Qwen3-ASR worker 从 1.0 秒 cadence、至少 0.8 秒音频开始重识别截至当前的累积音频，结果只更新浮窗而不写入目标应用。松开后停止安排和发布 preview，并通过旁路 IPC 取消正在生成的 preview，再提交不分段的完整录音 Qwen final；Qwen 尚在启动时最多等待 15 秒，只有缺失、真实失败、final 超时/异常或空输出才懒加载静态 Paraformer 与标点模型完成一次 fallback。preview cancellation 是正常生命周期，不触发 fallback。
 
 每轮录音都有递增的 session ID。浮窗忽略不属于当前 session 的 partial、finalizing、committed 或 dismiss 命令，防止旧任务的迟到消息关闭或覆盖新一轮浮窗。
 
@@ -17,26 +17,33 @@ VoxPill 默认把右 Ctrl 作为 push-to-talk 热键。右 Ctrl 连续稳定 60 
 ```text
 右 Ctrl 按下沿
   → 保存 foreground HWND
-  → 创建 streaming recognizer stream 与 session ID
+  → 创建有界 PCM buffer 与 session ID
   → 启动麦克风并显示 overlay
   → PortAudio callback 只复制 PCM chunk 并写入 SimpleQueue
-  → decode worker 串行 accept/decode，产生 partial preview
+  → capture worker 把 chunk 追加到 PCM buffer
+  → preview worker 按间隔取得累积快照
+  → Qwen 串行重识别并产生 pseudo-streaming preview
 
 右 Ctrl 松开沿
   → 停止并关闭麦克风 stream
-  → chunk sentinel 触发 recognizer flush
-  → 追加 0.5 秒静音、input_finished、decode 至不可继续
-  → final 文本恢复标点
-  → consumer 检查异常、时长和非空文本
+  → recording_done 阻止新 preview 和迟到 overlay 更新
+  → request-ID cancel 终止正在生成的 preview
+  → chunk sentinel 结束 capture worker
+  → consumer 检查异常与最短时长
+  → active preview 释放 inference gate 后立即执行完整录音 final
+  → Qwen final 成功则更新 overlay
+  → 确认 Qwen 失败才 lazy-load static Paraformer fallback
   → 恢复录音开始时保存的 target HWND
   → paste 或 Unicode SendInput 恰好一次
   → 可选 Enter
   → overlay committed 动画
 ```
 
-主线程承载托盘消息循环；20 ms 轮询线程读取 `GetAsyncKeyState` 的物理键态。`HotkeyGate` 要求热键稳定 60 ms；任何左键按下或松开都会把 mouse guard 延长 120 ms，因此连续点击、拖选或鼠标驱动伴随的短 modifier 脉冲不会创建录音 session。PortAudio callback 不做推理；每轮 decode worker 处理增量识别和 partial 标点；consumer 串行负责 final 注入。online decode、partial/final 标点恢复共用 pipeline 的 `decode_lock`。若上一句尚在等待注入时用户已开始下一句，consumer 会等右 Ctrl 再次松开后才提交上一句。
+主线程承载托盘消息循环；20 ms 轮询线程读取 `GetAsyncKeyState` 的物理键态。`HotkeyGate` 要求热键稳定 60 ms；任何左键按下或松开都会把 mouse guard 延长 120 ms。PortAudio callback 不做推理，只复制 chunk 到 queue；capture worker 写入线程安全、有上限的 PCM buffer。每轮最多有一个同步 preview loop，因此不会积压同一录音的旧快照；全局 request gate 串行使用 GPU，等待中的 final 优先于等待中的 preview。松键线程不获取 inference gate，而是在 session stop 同步边界后调用 `cancel_preview()`；worker 的 stdin reader 可在 generation 进行时设置 request 专属 cancellation event，Transformers stopping criterion 在 token loop 中结束 generation。cancelled response 释放 gate、丢弃 partial，且不会重启 worker或触发 Paraformer。
 
-单轮音频、模型或剪贴板异常不会终止常驻 consumer；短于 `behavior.min_seconds` 的录音和空 final 会被丢弃。poll、consumer 与 decode threads 均登记在 worker 集合中；幂等 cleanup 设置 stop flag、关闭现有音频 stream、给活跃 decode job 发送 sentinel，并限时 join 其他 workers，最后关闭并 join overlay UI thread。overlay 自己也会停止并 join ticker。
+Qwen client 在 App 启动后立即启动独立 `%LOCALAPPDATA%\voicekey-qwen-win` Python 子进程；Torch/Transformers 不进入生产 `.venv-win`。父子进程通过继承的 stdin/stdout 传递带 request ID 的本地 JSON；PCM16 使用 base64 承载，cancel 只匹配已知的 active/queued preview ID，错误或迟到 ID 无效，final 从不登记为可取消 preview。preview 默认 8 秒 timeout、30 秒累积音频上限；final 默认 30 秒 timeout、120 秒 PCM 上限。请求超时仍会终止并后台重启 Qwen worker。本地 `LazyOfflineAsr` 在健康路径只保存路径和锁，不 import `sherpa_onnx`、不创建 ONNX session。
+
+单轮音频、模型或剪贴板异常不会终止常驻 consumer；短于 `behavior.min_seconds`、超过 PCM 上限或双模型均为空的录音会被丢弃。poll、consumer、capture 与 preview threads 均登记在 worker 集合中；幂等 cleanup 设置 stop flag 和 recording_done、停止 Qwen 子进程、关闭现有音频 stream、给活跃 capture job 发送 sentinel，并限时 join 其他 workers，最后关闭并 join overlay UI thread。
 
 ## 浮窗呈现与定位
 
@@ -53,4 +60,4 @@ overlay 从不编辑或回写 partial。每轮 `DecodeJob` 在录音开始时保
 ## See Also
 
 - [项目全景](../overview.md) — 定位、组件和交付边界。
-- [ASR 候选模型实验](../operations/asr-benchmark.md) — streaming 模型的实验口径。
+- [ASR 候选模型实验](../operations/asr-benchmark.md) — 模型的实验口径与生产选型。

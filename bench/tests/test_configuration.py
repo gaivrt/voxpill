@@ -23,9 +23,14 @@ class ConfigurationTest(unittest.TestCase):
         models = load_models()
         self.assertEqual(
             set(models),
-            {"current_paraformer", "streaming_paraformer"},
+            {"current_paraformer", "streaming_paraformer", "qwen3_asr_0_6b"},
         )
         self.assertTrue(models["streaming_paraformer"]["true_streaming"])
+        self.assertFalse(models["qwen3_asr_0_6b"]["true_streaming"])
+        self.assertEqual(
+            models["qwen3_asr_0_6b"]["revision"],
+            "7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c",
+        )
 
     def test_current_model_files_exist(self):
         spec = resolve_model_paths(load_models()["current_paraformer"])
@@ -48,6 +53,10 @@ class ConfigurationTest(unittest.TestCase):
         self.assertEqual(len({item["id"] for item in prompts}), len(prompts))
         for category in ("zh", "en", "mixed"):
             self.assertEqual(sum(item["category"] == category for item in prompts), 4)
+        recorded_product_prompt = next(
+            item for item in prompts if item["id"] == "mixed-product"
+        )
+        self.assertTrue(recorded_product_prompt["text"].startswith("Voicekey "))
 
     def test_peak_working_set_is_available(self):
         self.assertGreater(peak_working_set_mb(), 0)

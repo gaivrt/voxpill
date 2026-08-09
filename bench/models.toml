@@ -3,8 +3,14 @@ label = "Current offline Paraformer (baseline)"
 kind = "offline_paraformer"
 true_streaming = false
 threads = 2
+source_page = "https://huggingface.co/csukuangfj/sherpa-onnx-paraformer-zh-2023-09-14"
+download_base = "https://huggingface.co/csukuangfj/sherpa-onnx-paraformer-zh-2023-09-14/resolve/main"
+download_mirror_base = "https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-2023-09-14/resolve/main"
+download_dir = "models/asr"
+download_files = ["model.int8.onnx", "tokens.txt"]
 model = "models/asr/model.int8.onnx"
 tokens = "models/asr/tokens.txt"
+required = ["model", "tokens"]
 
 [models.streaming_paraformer]
 label = "Streaming Paraformer bilingual zh-en"
@@ -20,6 +26,45 @@ encoder = "models/asr-streaming/encoder.int8.onnx"
 decoder = "models/asr-streaming/decoder.int8.onnx"
 tokens = "models/asr-streaming/tokens.txt"
 required = ["encoder", "decoder", "tokens"]
+
+[models.qwen3_asr_0_6b]
+label = "Qwen3-ASR 0.6B HF (offline final-pass)"
+kind = "offline_qwen3_asr"
+true_streaming = false
+source_page = "https://huggingface.co/Qwen/Qwen3-ASR-0.6B-hf"
+hf_repo = "Qwen/Qwen3-ASR-0.6B-hf"
+revision = "7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c"
+download_dir = "bench/model_cache/qwen3-asr-0.6b-hf"
+download_files = [
+    "chat_template.jinja",
+    "config.json",
+    "generation_config.json",
+    "model.safetensors",
+    "processor_config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+]
+model_dir = "bench/model_cache/qwen3-asr-0.6b-hf"
+chat_template = "bench/model_cache/qwen3-asr-0.6b-hf/chat_template.jinja"
+config = "bench/model_cache/qwen3-asr-0.6b-hf/config.json"
+generation_config = "bench/model_cache/qwen3-asr-0.6b-hf/generation_config.json"
+weights = "bench/model_cache/qwen3-asr-0.6b-hf/model.safetensors"
+processor_config = "bench/model_cache/qwen3-asr-0.6b-hf/processor_config.json"
+tokenizer = "bench/model_cache/qwen3-asr-0.6b-hf/tokenizer.json"
+tokenizer_config = "bench/model_cache/qwen3-asr-0.6b-hf/tokenizer_config.json"
+required = [
+    "chat_template",
+    "config",
+    "generation_config",
+    "weights",
+    "processor_config",
+    "tokenizer",
+    "tokenizer_config",
+]
+device = "cuda:0"
+dtype = "bfloat16"
+max_new_tokens = 256
+context = ""
 
 [assets.punctuation]
 label = "CT-Transformer bilingual punctuation"

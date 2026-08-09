@@ -25,13 +25,14 @@ dark theme, and disappears after the text is committed.
 ## Highlights
 
 - **Offline by design** — audio never leaves your computer.
-- **Chinese + English** — one bilingual streaming model, no language switching.
-- **True streaming preview** — partial results appear while you are speaking.
-- **Punctuation included** — partial and final text use a bilingual punctuation model.
+- **Multilingual Qwen recognition** — Chinese, English, and code-switching use one local GPU model.
+- **Qwen pseudo-streaming preview** — accumulated audio is periodically re-decoded while you speak.
+- **Consistent final text** — preview and committed text normally come from the same Qwen3-ASR worker.
+- **Lazy CPU fallback** — static INT8 Paraformer loads only after Qwen is confirmed unavailable.
 - **Type anywhere** — chat boxes, documents, browsers, editors, and other Windows apps.
 - **Focus-safe commit** — the final text returns to the window active when recording began.
 - **Native 60 Hz overlay** — per-pixel alpha, no focus stealing, light/dark auto theme.
-- **Small runtime** — CPU-only `sherpa-onnx`; no PyTorch, CUDA, or cloud service.
+- **Isolated runtimes** — Qwen and Torch live in a separate Windows environment; the app loads sherpa-onnx weights only on fallback.
 
 ## Demo
 
@@ -52,7 +53,7 @@ cd voxpill
 
 $env:UV_PROJECT_ENVIRONMENT = ".venv-win"
 uv sync
-uv run python bench\download_models.py streaming_paraformer punctuation
+uv run python bench\download_models.py current_paraformer punctuation
 uv run python -u main.py
 ```
 
@@ -60,6 +61,24 @@ After the first setup, `start-voicekey.bat` provides a convenient launcher.
 
 > The model download is roughly 320 MiB. Model weights are intentionally not
 > stored in this Git repository.
+
+### Qwen runtime
+
+Qwen is the normal recognition path. The app never imports Torch; it starts one
+isolated worker in the background, uses the same worker for periodic previews
+and the final transcript. Key release cancels an active preview before giving
+the unchanged full-recording final request priority. If Qwen is still starting,
+final recognition waits for a bounded grace
+period. Only a confirmed unavailable, failed, timed-out, or empty Qwen final
+causes the static Paraformer fallback to load into RAM.
+
+The local development runtime is `%LOCALAPPDATA%\voicekey-qwen-win`. See
+[`bench/README.md`](bench/README.md) for the pinned dependency and model setup.
+After setup, normal startup remains:
+
+```powershell
+.\start-voicekey.bat
+```
 
 ## Start with Windows
 
@@ -126,6 +145,19 @@ restore_clipboard = false
 auto_enter = false
 min_seconds = 0.3
 
+[final_pass]
+enabled = true
+python = "%LOCALAPPDATA%\\voicekey-qwen-win\\Scripts\\python.exe"
+model_dir = "bench/model_cache/qwen3-asr-0.6b-hf"
+timeout_seconds = 30.0
+startup_wait_seconds = 15.0
+preview_interval_seconds = 1.0
+preview_min_seconds = 0.8
+preview_max_audio_seconds = 30.0
+preview_timeout_seconds = 8.0
+max_audio_seconds = 120.0
+context = ""
+
 [audio]
 device = ""                  # empty = Windows default input device
 ```
@@ -135,12 +167,13 @@ and F1–F12.
 
 ## Models
 
-VoxPill uses quantized Apache-2.0 ONNX assets through `sherpa-onnx`:
+VoxPill normally uses the isolated Qwen checkpoint. Quantized ONNX assets are a lazy fallback:
 
 | Component | Purpose | Approx. size |
 |---|---|---:|
-| Bilingual streaming Paraformer | Chinese/English online ASR | 237 MiB |
-| CT-Transformer | Chinese/English punctuation | 80 MiB |
+| Qwen3-ASR 0.6B HF | Multilingual pseudo-streaming preview and final | 1.46 GiB |
+| Static INT8 Paraformer | Chinese/English failure fallback | 232 MiB |
+| CT-Transformer | Fallback punctuation | 72 MiB |
 
 Sources, exact file sizes, and known SHA-256 values are documented in
 [`models/README.md`](models/README.md). The downloader prefers the configured
@@ -154,25 +187,31 @@ Download the models first, then run:
 .\build-portable.bat
 ```
 
-The portable application is created at `dist\VoxPill\VoxPill.exe`. Copy the
-entire `dist\VoxPill` directory to another Windows x64 computer; Python is not
-required on the destination machine.
+The portable application is created at `dist\VoxPill\VoxPill.exe`. Static
+Paraformer and punctuation remain self-contained; the obsolete streaming model
+is not packaged. Qwen still requires the configured external Windows runtime
+and checkpoint. Without them the app lazily loads the bundled static fallback.
 
 ## Architecture
 
 ```text
 Right Ctrl gate
   → PortAudio callback queues 16 kHz mono PCM
-  → streaming Paraformer produces partial text
-  → CT-Transformer adds preview punctuation
-  → native no-activate overlay renders the preview
-  → key release flushes one final result
+  → capture worker appends to a bounded buffer
+  → isolated Qwen worker periodically re-decodes accumulated audio
+  → native no-activate overlay renders Qwen previews
+  → key release stops preview scheduling and cancels active generation
+  → priority Qwen request returns the final
+  → only confirmed Qwen failure lazy-loads static Paraformer
   → original target window is restored
   → text is inserted once
 ```
 
-Audio callbacks only copy PCM. Recognition runs in a worker, final insertion is
-serialized, and the overlay owns a separate Win32 UI thread and 60 Hz ticker.
+Audio callbacks only copy PCM. Preview work is serialized and never queues more
+than one request per recording. Cancel travels through an out-of-band local IPC
+message, so final no longer waits for redundant preview generation to finish.
+Final insertion is serialized, and the overlay
+owns a separate Win32 UI thread and 60 Hz ticker.
 
 ## Development
 
@@ -192,17 +231,18 @@ logs, and packaged builds are excluded from Git.
 
 On the development Windows machine:
 
-- first non-empty partial after roughly 1.3–1.9 seconds of speech audio;
-- corpus real-time factor around 0.19;
-- model load around 3.5 seconds;
-- peak benchmark worker memory around 330 MiB.
+- Qwen preview scheduling starts at 1.0 second with at least 0.8 seconds of audio;
+- two cancellation runs on a 16.6-second in-flight preview released the
+  inference gate in 0.574–0.837 seconds on the development machine;
+- Windows Qwen final-pass load around 8.9 seconds, corpus RTF around 0.16,
+  peak process RAM around 2.31 GiB, and Torch-reserved VRAM around 1.98 GiB.
 
 These are reference measurements, not hardware-independent guarantees.
 
 ## Acknowledgements
 
-VoxPill is built on [`sherpa-onnx`](https://github.com/k2-fsa/sherpa-onnx) and
-the quantized Paraformer and CT-Transformer models listed in
+VoxPill is built on Qwen3-ASR, [`sherpa-onnx`](https://github.com/k2-fsa/sherpa-onnx),
+and the quantized static Paraformer and CT-Transformer fallback models listed in
 [`models/README.md`](models/README.md).
 
 ## Friends

@@ -1,29 +1,30 @@
 ---
 title: VoxPill 项目全景
 type: overview
-updated: 2026-07-22 10:17
+updated: 2026-08-09 13:05
 ---
 
 # VoxPill 项目全景
 
 ## 定位
 
-VoxPill 是一个常驻 Windows 的轻量离线语音输入工具。用户稳定按住可配置的单键说话时，应用保存当时的目标窗口，本地 INT8 ONNX 模型持续完成中英文流式识别，并在当前显示器底部中央的无焦点自动明暗 pill 预览 partial；松开后恢复目标窗口、恢复 final 标点并一次写入。核心目标是离线、低依赖、全局可用，并避免引入 PyTorch、CUDA 或云端服务。
+VoxPill 是一个常驻 Windows 的离线语音输入工具。用户稳定按住可配置的单键说话时，应用保存当时的目标窗口，由独立 Windows GPU runtime 中的 Qwen3-ASR 周期性重识别累积音频，并在当前显示器底部中央的无焦点自动明暗 pill 伪流式预览；松开后同一 Qwen worker 生成高准确率 final，再恢复目标窗口并一次写入。静态 INT8 Paraformer 与标点模型只在 Qwen 确认失败后懒加载。Torch/CUDA 不进入生产 `.venv-win`，音频不离开本机。
 
 ## 用户链路
 
 ```text
 按住右 Ctrl
   → 保存 foreground HWND 并录制 16 kHz 单声道 int16 PCM
-  → bilingual streaming Paraformer 增量解码
-  → 无焦点自动明暗 pill 显示带标点 partial
-  → 松开后 flush final 并由 CT-Transformer 恢复标点
+  → 同一个 Qwen worker 定时重识别累积 PCM
+  → 无焦点自动明暗 pill 显示 Qwen preview
+  → 松开后取消 active preview，并优先请求完整录音 Qwen final
+  → Qwen 确认不可用、失败、超时或为空时才加载 static Paraformer
   → 恢复录音开始时的 HWND
   → 剪贴板粘贴或 Unicode SendInput 一次
   → 可选自动回车并收束浮窗
 ```
 
-默认热键是右 Ctrl。短于 0.3 秒的录音会被忽略；partial 会经过 CT-Transformer 恢复标点但永不注入，只有非空 final 才通过剪贴板和 Ctrl+V 或 Unicode `SendInput` 提交。注入前必须成功恢复录音开始时保存的目标 HWND；窗口失效或无法恢复焦点时，本轮不注入。默认 paste 路径保留本次识别文本，避免目标应用延迟读取时粘贴旧内容。
+默认热键是右 Ctrl。短于 0.3 秒的录音会被忽略；preview 永不注入，只有非空 final 才通过剪贴板和 Ctrl+V 或 Unicode `SendInput` 提交。注入前必须成功恢复录音开始时保存的目标 HWND；窗口失效或无法恢复焦点时，本轮不注入。默认 paste 路径保留本次识别文本，避免目标应用延迟读取时粘贴旧内容。
 
 ## 主要组件
 
@@ -31,16 +32,17 @@ VoxPill 是一个常驻 Windows 的轻量离线语音输入工具。用户稳定
 |------|------|
 | `main.py` | 读取配置、确保单实例、保存目标 HWND、轮询物理键态、录音、调度推理与注入、跟踪 worker 和退出清理 |
 | `hotkey.py` | 以 60 ms 稳定窗口和点击后 120 ms mouse guard 过滤短热键伪脉冲 |
-| `asr.py` | 验证模型文件，初始化 sherpa-onnx online recognizer 和 punctuation pipeline，在共享锁内管理增量 decode、final flush 与标点恢复 |
+| `asr.py` | 在首次 fallback 时才初始化 sherpa-onnx static Paraformer 和 punctuation pipeline，并串行完成离线识别 |
+| `qwen_final.py` | 管理隔离 Qwen 子进程、本地 request-ID/cancel IPC、后台预加载、伪流式 preview、final 优先、timeout/restart 与 fallback 选择 |
 | `overlay.py` | 运行独立 Win32 UI thread 和 60 Hz ticker，以 per-pixel alpha 在当前显示器底部中央绘制自动明暗 pill |
 | `inject.py` | 封装 Win32 `SendInput`、Unicode 字符事件和剪贴板粘贴路径 |
 | `tray.py` | 生成透明画布上的极简圆球与五段声纹托盘图标，并读取 Windows app theme 选择明暗配色 |
-| `config.toml` | 定义热键、注入方式、剪贴板恢复、自动回车、最短录音和麦克风设备 |
+| `config.toml` | 定义热键、注入方式、剪贴板恢复、自动回车、最短录音、Qwen runtime/timeout/PCM 上限和麦克风设备 |
 | `models/` | 保存 Paraformer ASR 与 CT-Transformer 标点模型及 token 数据 |
 
 ## 运行模型
 
-应用采用多线程常驻结构：主线程运行 Windows 托盘消息循环；轮询线程每 20 ms 读取热键物理状态；PortAudio callback 只复制音频 chunk；每轮 decode worker 完成增量识别，并与 final 标点恢复共用同一把锁；消费线程等待 punctuated final、恢复目标 HWND 并执行一次文本注入；overlay UI thread 处理 Win32 消息，独立 ticker 以 60 Hz 投递动画 frame。应用跟踪 poll、consumer 和 decode workers，cleanup 会发出停止信号、结束活跃 stream 并限时 join workers 后再关闭 overlay。若托盘依赖不可用，应用退化为主线程消费队列并通过 Ctrl+C 退出。
+应用采用多线程加隔离子进程的常驻结构：主线程运行 Windows 托盘消息循环；轮询线程每 20 ms 读取热键物理状态；PortAudio callback 只复制音频 chunk；每轮 capture worker 维护有界 PCM，preview worker 周期请求 Qwen；松键通过旁路 cancel 终止 active preview，消费线程随后以更高优先级请求完整录音 Qwen final、必要时触发 lazy fallback、恢复目标 HWND 并执行一次文本注入；父进程 reader 按 request ID 分发响应，子进程 stdin reader 并发接收 cancel；overlay UI thread 处理 Win32 消息。
 
 托盘 tooltip 和禁用菜单标题均只显示产品名 `VoxPill`，不重复热键或录音说明。图标在 8× supersampling 下绘制后缩放到 64 px，由 Windows 继续适配 16–32 px notification area；圆球直径占 64 px 画布中的 62 px，以充分利用 Windows 的小尺寸托盘槽位。图标只有圆形底面与五段声纹：浅色主题使用暖白球与深色声纹，深色主题使用黑球与暖白声纹；录音态仅切换到另一帧声纹。常驻轮询每秒检查一次 Windows app theme，无需重启即可自动更新托盘图标。
 
@@ -52,7 +54,7 @@ VoxPill 是一个常驻 Windows 的轻量离线语音输入工具。用户稳定
 
 ## 模型与依赖
 
-生产语音识别使用 bilingual streaming INT8 Paraformer encoder/decoder，标点恢复使用 INT8 CT-Transformer，均通过固定版本的 `sherpa-onnx` CPU runtime 加载。旧的 offline Paraformer 仍作为本地基线资产保留，但不在当前主链路中加载。项目使用 Python 3.11 或更高版本，以 `uv` 管理依赖。公开源码仓库不跟踪模型权重；首次运行前通过 `bench/download_models.py` 下载 streaming ASR 与标点资产。
+Qwen3-ASR 0.6B BF16 在独立 Windows Python 3.11 runtime 中常驻 GPU，同时负责默认 1.0 秒 cadence、至少 0.8 秒音频的累积 preview 和松键后的完整录音 final。两次松键 cancel smoke 实测让 16.6 秒 active preview 在 0.574–0.837 秒内释放 gate，随后完整 final 在 1.988–2.814 秒完成且与固定 baseline 完全一致。static bilingual INT8 Paraformer 与 INT8 CT-Transformer 通过固定版本 `sherpa-onnx` 作为 CPU fallback，但健康路径不加载 ONNX session。
 
 模型二进制是大型资产，Wiki 只维护其角色、来源、许可证、尺寸和校验信息，不读取或复制模型内容。
 
@@ -62,12 +64,12 @@ overlay 默认在每次 show 时读取 Windows `AppsUseLightTheme`：浅色使�
 
 ## 当前工程状态
 
-- 项目结构小而集中；`bench/tests/` 覆盖 benchmark 配置、streaming runtime 与 overlay 纯函数/状态行为。
+- `bench/tests/` 覆盖 benchmark、伪流式 preview、旁路 cancel、final 保护/优先、request ID 隔离、bounded PCM、lazy fallback 与 overlay 状态行为。
 - `README.md` 已覆盖主要用户操作、性能概况和配置示例。
 - `.venv/`、`build/`、`dist/`、`__pycache__/` 和 `voxpill.log` 属于本地或生成状态，不应作为 Wiki ingest 来源。
 
 ## See Also
 
 - [Wiki Index](index.md) — 全部知识页索引。
-- [流式语音输入运行链路](architecture/runtime-pipeline.md) — streaming decode、final 注入与自适应 overlay 的线程和状态边界。
+- [伪流式语音输入运行链路](architecture/runtime-pipeline.md) — Qwen preview/final、lazy fallback、注入与 overlay 的线程和状态边界。
 - [Wiki Schema](../SCHEMA.md) — Wiki 分类、约定和维护流程。

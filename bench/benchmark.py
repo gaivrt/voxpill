@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import tomllib
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -33,13 +34,33 @@ DEFAULT_CORPUS = BENCH_DIR / "corpus" / "audio"
 DEFAULT_RESULTS = BENCH_DIR / "results"
 
 
+@dataclass(frozen=True)
+class Qwen3Recognizer:
+    model: object
+    processor: object
+    torch: object
+    device: str
+    dtype: str
+    max_new_tokens: int
+    context: str
+
+
 def load_models() -> dict[str, dict]:
     return tomllib.loads(MODEL_CONFIG.read_text(encoding="utf-8"))["models"]
 
 
 def resolve_model_paths(spec: dict) -> dict:
     resolved = dict(spec)
-    for key in ("model", "tokens", "encoder", "decoder", "joiner"):
+    path_keys = {
+        "model",
+        "tokens",
+        "encoder",
+        "decoder",
+        "joiner",
+        "model_dir",
+        *spec.get("required", []),
+    }
+    for key in path_keys:
         if key in resolved:
             resolved[key] = str((PROJECT_ROOT / resolved[key]).resolve())
     return resolved
@@ -51,6 +72,7 @@ def validate_model_files(model_id: str, spec: dict) -> None:
         "online_paraformer": ("encoder", "decoder", "tokens"),
         "offline_wenet_ctc": ("model", "tokens"),
         "offline_fire_red_ctc": ("model", "tokens"),
+        "offline_qwen3_asr": tuple(spec.get("required", ())),
     }.get(spec["kind"])
     if keys is None:
         raise ValueError(f"{model_id}: unsupported kind {spec['kind']}")
@@ -104,10 +126,53 @@ def peak_working_set_mb() -> float:
 
 
 def load_recognizer(spec: dict, threads_override: int | None):
+    kind = spec["kind"]
+    if kind == "offline_qwen3_asr":
+        try:
+            import torch
+            from transformers import AutoModelForMultimodalLM, AutoProcessor
+        except ImportError as exc:
+            raise RuntimeError(
+                "Qwen benchmark dependencies are missing; run "
+                "`uv sync --group qwen-asr` first"
+            ) from exc
+        device = str(spec.get("device", "cuda:0"))
+        dtype_name = str(spec.get("dtype", "bfloat16"))
+        if device.startswith("cuda") and not torch.cuda.is_available():
+            raise RuntimeError("Qwen3-ASR benchmark requires an available CUDA device")
+        if dtype_name == "bfloat16" and device.startswith("cuda"):
+            if not torch.cuda.is_bf16_supported():
+                raise RuntimeError("configured CUDA device does not support bfloat16")
+        try:
+            dtype = getattr(torch, dtype_name)
+        except AttributeError as exc:
+            raise ValueError(f"unsupported torch dtype: {dtype_name}") from exc
+        if device.startswith("cuda"):
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats(device)
+        processor = AutoProcessor.from_pretrained(
+            spec["model_dir"], local_files_only=True
+        )
+        model = AutoModelForMultimodalLM.from_pretrained(
+            spec["model_dir"],
+            dtype=dtype,
+            device_map=device,
+            local_files_only=True,
+            low_cpu_mem_usage=True,
+        ).eval()
+        return Qwen3Recognizer(
+            model=model,
+            processor=processor,
+            torch=torch,
+            device=device,
+            dtype=dtype_name,
+            max_new_tokens=int(spec.get("max_new_tokens", 256)),
+            context=str(spec.get("context", "")),
+        )
+
     import sherpa_onnx
 
     threads = threads_override or int(spec.get("threads", 2))
-    kind = spec["kind"]
     if kind == "offline_paraformer":
         return sherpa_onnx.OfflineRecognizer.from_paraformer(
             paraformer=spec["model"], tokens=spec["tokens"], num_threads=threads
@@ -129,6 +194,11 @@ def load_recognizer(spec: dict, threads_override: int | None):
             model=spec["model"], tokens=spec["tokens"], num_threads=threads
         )
     raise ValueError(f"Unsupported model kind: {kind}")
+
+
+def synchronize_recognizer(recognizer) -> None:
+    if isinstance(recognizer, Qwen3Recognizer) and recognizer.device.startswith("cuda"):
+        recognizer.torch.cuda.synchronize(recognizer.device)
 
 
 def decode_offline(recognizer, samples: np.ndarray, sample_rate: int) -> dict:
@@ -166,6 +236,47 @@ def decode_online(recognizer, samples: np.ndarray, sample_rate: int) -> dict:
     }
 
 
+def decode_qwen3(
+    recognizer: Qwen3Recognizer, samples: np.ndarray, sample_rate: int
+) -> dict:
+    feature_rate = int(recognizer.processor.feature_extractor.sampling_rate)
+    if sample_rate != feature_rate:
+        raise ValueError(
+            f"Qwen3-ASR expects {feature_rate} Hz audio, got {sample_rate} Hz"
+        )
+    request = {"audio": samples}
+    if recognizer.context:
+        request["prompt"] = recognizer.context
+    inputs = recognizer.processor.apply_transcription_request(**request).to(
+        recognizer.model.device, recognizer.model.dtype
+    )
+    if recognizer.device.startswith("cuda"):
+        recognizer.torch.cuda.synchronize(recognizer.device)
+    started = time.perf_counter()
+    with recognizer.torch.inference_mode():
+        output_ids = recognizer.model.generate(
+            **inputs,
+            max_new_tokens=recognizer.max_new_tokens,
+            do_sample=False,
+        )
+    if recognizer.device.startswith("cuda"):
+        recognizer.torch.cuda.synchronize(recognizer.device)
+    elapsed = time.perf_counter() - started
+    generated_ids = output_ids[:, inputs["input_ids"].shape[1] :]
+    text = recognizer.processor.decode(
+        generated_ids, return_format="transcription_only"
+    )[0]
+    return {"text": text.strip(), "inference_seconds": elapsed}
+
+
+def peak_gpu_reserved_mb(recognizer) -> float | None:
+    if not isinstance(recognizer, Qwen3Recognizer):
+        return None
+    if not recognizer.device.startswith("cuda"):
+        return None
+    return recognizer.torch.cuda.max_memory_reserved(recognizer.device) / (1024 * 1024)
+
+
 def aggregate_scores(rows: list[dict]) -> dict:
     names = {"zh": "cer", "en": "wer", "mixed": "mer"}
     output: dict[str, dict] = {}
@@ -196,13 +307,16 @@ def run_worker(
 
     load_started = time.perf_counter()
     recognizer = load_recognizer(spec, threads_override)
+    synchronize_recognizer(recognizer)
     load_seconds = time.perf_counter() - load_started
     rows = []
     for item in prompts:
         wav_path = corpus / f"{item['id']}.wav"
         samples, sample_rate = read_wav(wav_path)
         duration = len(samples) / sample_rate
-        if spec["kind"].startswith("online_"):
+        if spec["kind"] == "offline_qwen3_asr":
+            decoded = decode_qwen3(recognizer, samples, sample_rate)
+        elif spec["kind"].startswith("online_"):
             decoded = decode_online(recognizer, samples, sample_rate)
         else:
             decoded = decode_offline(recognizer, samples, sample_rate)
@@ -228,9 +342,16 @@ def run_worker(
         "label": spec["label"],
         "kind": spec["kind"],
         "true_streaming": bool(spec["true_streaming"]),
-        "threads": threads_override or int(spec.get("threads", 2)),
+        "threads": (
+            None
+            if spec["kind"] == "offline_qwen3_asr"
+            else threads_override or int(spec.get("threads", 2))
+        ),
+        "device": getattr(recognizer, "device", "cpu"),
+        "dtype": getattr(recognizer, "dtype", None),
         "load_seconds": load_seconds,
         "peak_working_set_mb": peak_working_set_mb(),
+        "peak_gpu_reserved_mb": peak_gpu_reserved_mb(recognizer),
         "mean_rtf": sum(row["rtf"] for row in rows) / len(rows),
         "corpus_rtf": sum(row["inference_seconds"] for row in rows)
         / sum(row["audio_seconds"] for row in rows),
@@ -253,6 +374,7 @@ def write_summary(results: list[dict], destination: Path) -> None:
                 "threads",
                 "load_seconds",
                 "peak_working_set_mb",
+                "peak_gpu_reserved_mb",
                 "mean_rtf",
                 "corpus_rtf",
                 "cer",
@@ -269,6 +391,7 @@ def write_summary(results: list[dict], destination: Path) -> None:
                     "threads": result["threads"],
                     "load_seconds": result["load_seconds"],
                     "peak_working_set_mb": result["peak_working_set_mb"],
+                    "peak_gpu_reserved_mb": result.get("peak_gpu_reserved_mb"),
                     "mean_rtf": result["mean_rtf"],
                     "corpus_rtf": result["corpus_rtf"],
                     "cer": result["metrics"]["cer"]["rate"],
