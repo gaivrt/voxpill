@@ -16,20 +16,13 @@ restore_clipboard = false  # false 最可靠：识别文本会留在剪贴板，
 auto_enter = false  # 转写后是否自动回车发送（全局默认 false，只打字不发送）
 min_seconds = 0.3   # 短于此时长的录音直接忽略
 
-[final_pass]
-# Qwen 是正常路径中唯一常驻的 ASR；录音时反复识别累积音频来模拟流式预览。
-# 静态 Paraformer 仅在 Qwen 明确失败后懒加载，不占用正常运行时 RAM。
-enabled = true
-python = "%LOCALAPPDATA%\\voicekey-qwen-win\\Scripts\\python.exe"
-model_dir = "bench/model_cache/qwen3-asr-0.6b-hf"
-timeout_seconds = 30.0
-startup_wait_seconds = 15.0
+[recognition]
+# Static Paraformer 在 CPU 上反复识别累积音频；预览按解码耗时在 1–2 秒间自适应。
 preview_interval_seconds = 1.0
+preview_max_interval_seconds = 2.0
 preview_min_seconds = 0.8
 preview_max_audio_seconds = 30.0
-preview_timeout_seconds = 8.0
 max_audio_seconds = 120.0  # 超过上限不保留完整 PCM，本轮忽略
-context = ""        # 可选热词/上下文；留空使用无提示模型结果
 
 [audio]
 device = ""         # 麦克风设备名或编号；留空 = 系统默认输入设备

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """VoxPill — 全局伪流式语音输入：按住右 Ctrl 预览，松开提交 final。
 
-PC 麦克风 → Qwen accumulated-audio previews + Qwen final → 文本注入。常驻进程，开机自启，
+PC 麦克风 → static Paraformer accumulated-audio previews + final → 文本注入。常驻进程，开机自启，
 托盘图标可右键退出。脱胎自 Buddy 的 companion，完全不依赖硬件 / 串口 / BLE。
 
 热键用 GetAsyncKeyState **轮询真实物理键态**（而非监听键盘事件），所以天生免疫
@@ -11,9 +11,8 @@ PC 麦克风 → Qwen accumulated-audio previews + Qwen final → 文本注入�
   - 主线程：托盘图标消息循环（pystray.Icon.run，Windows 要求跑在主线程）
   - 轮询线程：每 20ms 读热键物理状态，按下沿开录音、松开沿把成段 PCM 入队
   - 采集线程：把 chunk queue 追加到有界 PCM buffer
-  - 预览线程：定时把累积 PCM 交给 Qwen，结果发给 no-focus overlay
-  - 消费线程：等待 Qwen final；确认失败后懒加载静态 Paraformer → 注入 → overlay 退场
-  - Qwen 子进程：启动后异步预加载 GPU 模型，串行返回 preview/final
+  - 预览线程：定时把累积 PCM 交给 static Paraformer，结果发给 no-focus overlay
+  - 消费线程：用同一 static Paraformer 识别完整 final → 注入 → overlay 退场
   - PortAudio 回调线程：只复制 PCM chunk 并入队
   缺 pystray/pillow 时退化为：主线程消费 + Ctrl+C 退出。
 
@@ -33,15 +32,14 @@ import sounddevice as sd
 
 import inject
 from hotkey import HotkeyGate
-from asr import LazyOfflineAsr, SR
-from overlay import LiquidGlassOverlay
-from qwen_final import (
+from asr import (
     BoundedPcmBuffer,
-    QwenFinalClient,
-    QwenFinalConfig,
-    recognize_final_with_fallback,
+    OfflineAsr,
+    RecognitionConfig,
+    SR,
     run_pseudo_streaming_preview,
 )
+from overlay import LiquidGlassOverlay
 
 APP_DIR = (
     Path(sys.executable).resolve().parent
@@ -106,7 +104,6 @@ class DecodeJob:
     chunks: queue.SimpleQueue = field(default_factory=queue.SimpleQueue)
     capture_done: threading.Event = field(default_factory=threading.Event)
     recording_done: threading.Event = field(default_factory=threading.Event)
-    qwen_failed: threading.Event = field(default_factory=threading.Event)
     preview_lock: threading.Lock = field(default_factory=threading.Lock)
     error: BaseException | None = None
 
@@ -171,8 +168,8 @@ def main():
     cfg = load_config()
     hk, bh, au = cfg.get("hotkey", {}), cfg.get("behavior", {}), cfg.get("audio", {})
     ov = cfg.get("overlay", {})
-    final_cfg = QwenFinalConfig.from_mapping(cfg.get("final_pass", {}), APP_DIR)
-    qwen_max_bytes = int(SR * 2 * final_cfg.max_audio_seconds)
+    recognition_cfg = RecognitionConfig.from_mapping(cfg.get("recognition", {}))
+    max_pcm_bytes = int(SR * 2 * recognition_cfg.max_audio_seconds)
 
     key_name = str(hk.get("key", "ctrl_r")).lower()
     hotkey_vk = VK.get(key_name)
@@ -186,14 +183,7 @@ def main():
     device = parse_device(au.get("device"))
 
     glass = LiquidGlassOverlay(say, theme=str(ov.get("theme", "auto")).lower())
-    fallback_asr = LazyOfflineAsr(APP_DIR, say)
-    say("[asr] static Paraformer fallback idle (lazy)")
-    qwen_client = QwenFinalClient(final_cfg, say) if final_cfg.enabled else None
-    if qwen_client is not None:
-        try:
-            qwen_client.start()
-        except Exception as exc:
-            say(f"[qwen] background preload failed: {type(exc).__name__}: {exc}")
+    asr = OfflineAsr(APP_DIR, say)
     say(f"\n就绪 — 按住 {key_name} 说话，松开提交。\n")
 
     work = queue.Queue()
@@ -263,35 +253,16 @@ def main():
             if stop_flag.is_set():
                 return
             duration = job.pcm_buffer.total_bytes / (SR * 2)
-            say(f"[qwen] preview ready ({duration:.1f}s captured)")
+            say(f"[asr] preview ready ({duration:.1f}s captured)")
             glass.partial(job.session_id, text)
 
-        def on_failure(exc, pcm):
-            del exc
-            with job.preview_lock:
-                if stop_flag.is_set() or job.recording_done.is_set():
-                    return
-                job.qwen_failed.set()
-            if stop_flag.is_set() or job.recording_done.is_set():
-                return
-            try:
-                text = fallback_asr.recognize(pcm)
-                if text and not job.recording_done.is_set():
-                    glass.partial(job.session_id, text)
-            except Exception as fallback_exc:
-                say(
-                    "[asr] preview fallback failed: "
-                    f"{type(fallback_exc).__name__}: {fallback_exc}"
-                )
-
         run_pseudo_streaming_preview(
-            qwen_client,
+            asr,
             job.pcm_buffer,
             job.recording_done,
-            final_cfg,
+            recognition_cfg,
             publish_preview,
             say,
-            on_failure,
             job.preview_lock,
         )
 
@@ -300,7 +271,7 @@ def main():
         job = DecodeJob(
             session_id,
             int(user32.GetForegroundWindow() or 0),
-            BoundedPcmBuffer(qwen_max_bytes),
+            BoundedPcmBuffer(max_pcm_bytes),
         )
         st["job"] = job
         glass.show(session_id)
@@ -337,11 +308,6 @@ def main():
         if job is not None:
             with job.preview_lock:
                 job.recording_done.set()
-            if qwen_client is not None:
-                try:
-                    qwen_client.cancel_preview()
-                except Exception as exc:
-                    say(f"[qwen] preview cancel failed: {type(exc).__name__}: {exc}")
         if stream is not None:
             try:
                 stream.stop()      # 阻塞到回调结束，之后读 frames 无竞争
@@ -399,29 +365,15 @@ def main():
                     continue
                 pcm = job.pcm_buffer.to_bytes()
                 try:
-                    selected = recognize_final_with_fallback(
-                        qwen_client,
-                        pcm,
-                        final_cfg,
-                        fallback_asr.recognize,
-                        qwen_failed=job.qwen_failed.is_set(),
-                        cancel_event=stop_flag,
-                        say=say,
-                    )
+                    text = asr.recognize(pcm, priority="final").strip()
                 except Exception as exc:
                     say(
-                        "[asr] final fallback failed: "
+                        "[asr] final recognition failed: "
                         f"{type(exc).__name__}: {exc}"
                     )
-                    selected = None
-                text = selected.text if selected is not None else ""
-                if selected is not None and selected.source == "qwen":
-                    say(f"[qwen] final ready ({dur:.1f}s audio)")
-                    glass.finalizing(job.session_id, text)
-                    if not fallback_asr.is_loaded:
-                        say("[asr] Paraformer fallback remains unloaded")
-                elif selected is not None and selected.source == "paraformer":
-                    say(f"[asr] static Paraformer fallback ready ({dur:.1f}s audio)")
+                    text = ""
+                if text:
+                    say(f"[asr] final ready ({dur:.1f}s audio)")
                     glass.finalizing(job.session_id, text)
                 say(f'  → "{text}"')
                 if text:
@@ -472,8 +424,6 @@ def main():
         if job is not None:
             job.chunks.put(None)
             glass.dismiss(job.session_id)
-        if qwen_client is not None:
-            qwen_client.close()
         current = threading.current_thread()
         with workers_lock:
             pending = list(workers)

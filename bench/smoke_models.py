@@ -15,27 +15,19 @@ import numpy as np
 try:
     from .benchmark import (
         decode_offline,
-        decode_online,
-        decode_qwen3,
         load_models,
         load_recognizer,
-        peak_gpu_reserved_mb,
         peak_working_set_mb,
         resolve_model_paths,
-        synchronize_recognizer,
         validate_model_files,
     )
 except ImportError:
     from benchmark import (
         decode_offline,
-        decode_online,
-        decode_qwen3,
         load_models,
         load_recognizer,
-        peak_gpu_reserved_mb,
         peak_working_set_mb,
         resolve_model_paths,
-        synchronize_recognizer,
         validate_model_files,
     )
 
@@ -45,24 +37,18 @@ def smoke(model_id: str) -> dict:
     validate_model_files(model_id, spec)
     started = time.perf_counter()
     recognizer = load_recognizer(spec, None)
-    synchronize_recognizer(recognizer)
     load_seconds = time.perf_counter() - started
     samples = np.zeros(16000, dtype=np.float32)
-    if spec["kind"] == "offline_qwen3_asr":
-        result = decode_qwen3(recognizer, samples, 16000)
-    elif spec["kind"].startswith("online_"):
-        result = decode_online(recognizer, samples, 16000)
-    else:
-        result = decode_offline(recognizer, samples, 16000)
+    result = decode_offline(recognizer, samples, 16000)
     return {
         "model_id": model_id,
         "kind": spec["kind"],
-        "device": getattr(recognizer, "device", "cpu"),
-        "dtype": getattr(recognizer, "dtype", None),
+        "device": "cpu",
+        "dtype": None,
         "load_seconds": load_seconds,
         "decode_seconds": result["inference_seconds"],
         "peak_working_set_mb": peak_working_set_mb(),
-        "peak_gpu_reserved_mb": peak_gpu_reserved_mb(recognizer),
+        "peak_gpu_reserved_mb": None,
         "text": result["text"],
     }
 

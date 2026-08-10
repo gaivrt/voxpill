@@ -2,21 +2,20 @@
 
 ## Project
 
-VoxPill 是一个面向 Windows 的离线全局语音输入工具：按住右 Ctrl 时保存目标窗口，由独立 GPU Qwen worker 周期性重识别累积音频并在无焦点、自动适配 Windows 明暗主题的 pill 中伪流式预览；松开后取消 active preview，再以优先级请求生成 Qwen final，确认失败才懒加载静态 INT8 Paraformer fallback，随后恢复目标窗口并一次注入。
+VoxPill 是一个面向 Windows 的 CPU-only 离线全局语音输入工具：按住右 Ctrl 时保存目标窗口，由单个 static INT8 Paraformer 以 1–2 秒自适应节奏重识别累积音频，并在无焦点、自动适配 Windows 明暗主题的 pill 中逐字伪流式预览；松开后停止 preview 发布，以 final 优先级识别完整录音，随后恢复目标窗口并一次注入。
 
 ## Project Structure
 
 | 路径 | 角色 |
 |------|------|
-| `main.py` | 应用入口；管理单实例、配置、热键轮询、录音、目标 HWND、Qwen preview/final、lazy fallback、注入、worker 与进程生命周期 |
+| `main.py` | 应用入口；管理单实例、配置、热键轮询、录音、目标 HWND、static Paraformer preview/final、注入、worker 与进程生命周期 |
 | `hotkey.py` | 对 push-to-talk 物理键态做稳定窗口与 mouse guard，过滤连续点击产生的短伪脉冲 |
-| `asr.py` | 提供线程安全的 lazy static Paraformer + CT-Transformer fallback；健康 Qwen 路径不加载 sherpa 模型 |
-| `qwen_final.py` | 在独立 Windows Python 子进程中预加载 Qwen3-ASR，通过本地 request-ID JSON/PCM/cancel 协议生成伪流式 preview 与 final，并处理 preview 取消、final 优先、timeout 和重启 |
+| `asr.py` | 启动时加载唯一的 static Paraformer + CT-Transformer pipeline，提供有界 PCM、final 优先 gate 与累积音频伪流式调度 |
 | `overlay.py` | 以独立 Win32 UI thread 和 60 Hz ticker 在当前显示器底部中央显示 no-activate、per-pixel alpha 的自动明暗 pill |
 | `inject.py` | 通过剪贴板或 Win32 `SendInput` 向焦点窗口注入文本 |
 | `tray.py` | 生成空闲与录音状态的托盘图标 |
-| `config.toml` | 用户可编辑的 push-to-talk 热键、overlay 主题、注入行为、Qwen runtime/preview cadence/timeout/PCM 上限和音频设备配置；默认使用右 Ctrl 与 auto 主题 |
-| `models/` | 生产 static fallback、标点以及 benchmark-only streaming 模型和 token 文件；`models/README.md` 记录来源、许可证和校验值 |
+| `config.toml` | 用户可编辑的 push-to-talk 热键、overlay 主题、注入行为、preview cadence/PCM 上限和音频设备配置；默认使用右 Ctrl 与 auto 主题 |
+| `models/` | 生产 static Paraformer、标点模型和 token 文件；`models/README.md` 记录来源、许可证和校验值 |
 | `pyproject.toml` / `uv.lock` | Python 项目元数据、运行依赖与锁定版本 |
 | `voicekey.spec` / `build-portable.bat` | PyInstaller portable 构建配置与 Windows 构建入口 |
 | `start-voicekey.bat` / `start-voicekey-hidden.vbs` | 前台启动及隐藏自启动入口 |

@@ -19,7 +19,6 @@ if not exist "%UV_EXE%" (
   --add-data "models\asr;models\asr" ^
   --add-data "models\punctuation;models\punctuation" ^
   --add-data "config.toml;." ^
-  --add-data "qwen_final.py;." ^
   --collect-all sherpa_onnx ^
   main.py
 

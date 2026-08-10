@@ -156,42 +156,6 @@ def install_archive_model(
     return receipt
 
 
-def install_huggingface_model(
-    model_id: str,
-    spec: dict,
-    snapshot_download_fn=None,
-) -> dict:
-    if snapshot_download_fn is None:
-        try:
-            from huggingface_hub import snapshot_download as snapshot_download_fn
-        except ImportError as exc:
-            raise RuntimeError(
-                "Hugging Face downloader is missing; run "
-                "`uv sync --group qwen-asr` first"
-            ) from exc
-    destination = PROJECT_ROOT / spec["download_dir"]
-    cached = all(path.is_file() for path in required_paths(spec))
-    if not cached:
-        snapshot_download_fn(
-            repo_id=spec["hf_repo"],
-            revision=spec["revision"],
-            local_dir=str(destination),
-            allow_patterns=list(spec["download_files"]),
-        )
-    missing = [path for path in required_paths(spec) if not path.is_file()]
-    if missing:
-        raise FileNotFoundError(f"{model_id}: snapshot missing required files: {missing}")
-    return {
-        "model": model_id,
-        "source_page": spec["source_page"],
-        "repository": spec["hf_repo"],
-        "revision": spec["revision"],
-        "download_status": "cached" if cached else "downloaded",
-        "files": file_receipts(spec),
-        "verified_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("models", nargs="*", help="model IDs from models.toml")
@@ -203,7 +167,7 @@ def main() -> int:
     external = {
         key: value
         for key, value in catalog.items()
-        if "archive_url" in value or "download_base" in value or "hf_repo" in value
+        if "archive_url" in value or "download_base" in value
     }
     selected = list(external) if args.all else args.models
     if not selected:
@@ -219,9 +183,7 @@ def main() -> int:
     for model_id in selected:
         spec = external[model_id]
         old_receipt = previous.get(model_id)
-        if "hf_repo" in spec:
-            previous[model_id] = install_huggingface_model(model_id, spec)
-        elif "download_base" in spec:
+        if "download_base" in spec:
             previous[model_id] = install_direct_model(
                 model_id, spec, args.origin, old_receipt
             )

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 
 MAX_WIDTH = 440
+CHAR_REVEAL_SECONDS = 0.045
 
 
 def enable_dpi_awareness() -> None:
@@ -56,6 +57,29 @@ def visual_units(text: str) -> float:
 def display_text(text: str) -> str:
     """Normalize transcript whitespace; pixel fitting happens in the renderer."""
     return " ".join(text.split())
+
+
+def common_prefix(left: str, right: str) -> str:
+    """Return the stable prefix shared by two successive ASR hypotheses."""
+    end = min(len(left), len(right))
+    index = 0
+    while index < end and left[index] == right[index]:
+        index += 1
+    return left[:index]
+
+
+def reconcile_partial_text(current: str, target: str) -> str:
+    """Keep stable visible text and roll back only the revised suffix."""
+    return current if target.startswith(current) else common_prefix(current, target)
+
+
+def reveal_next_character(current: str, target: str) -> str:
+    """Advance a reconciled partial by one Unicode code point."""
+    if current == target:
+        return current
+    if not target.startswith(current):
+        current = common_prefix(current, target)
+    return target[: len(current) + 1]
 
 
 def adaptive_width(text: str) -> int:
@@ -481,6 +505,8 @@ class LiquidGlassOverlay:
             "phase": "hidden",
             "phase_started": time.perf_counter(),
             "text": "",
+            "target_text": "",
+            "next_character_at": 0.0,
             "status": "listening",
             "anchor": (0, 0, "cursor"),
             "max_layout": OverlayLayout(36, 36, 0),
@@ -547,6 +573,8 @@ class LiquidGlassOverlay:
                     phase="showing",
                     phase_started=now,
                     text="",
+                    target_text="",
+                    next_character_at=now,
                     status="listening",
                     anchor=anchor,
                     max_layout=OverlayLayout(36, 36, 0),
@@ -566,14 +594,20 @@ class LiquidGlassOverlay:
             elif session_id != self._state["active_id"]:
                 continue
             elif command == "partial":
-                self._state["text"] = display_text(text)
+                target = display_text(text)
+                self._state["text"] = reconcile_partial_text(
+                    self._state["text"], target
+                )
+                self._state["target_text"] = target
+                self._state["next_character_at"] = now
                 self._state["status"] = "listening"
                 self._state["max_layout"] = expanded_layout(
-                    self._state["max_layout"], self._state["text"]
+                    self._state["max_layout"], target
                 )
             elif command == "finalizing":
                 if text:
                     self._state["text"] = display_text(text)
+                    self._state["target_text"] = self._state["text"]
                     self._state["max_layout"] = expanded_layout(
                         self._state["max_layout"], self._state["text"]
                     )
@@ -581,6 +615,7 @@ class LiquidGlassOverlay:
             elif command in {"committed", "dismiss"}:
                 if command == "committed" and text:
                     self._state["text"] = display_text(text)
+                    self._state["target_text"] = self._state["text"]
                 self._state["phase"] = "exiting"
                 self._state["phase_started"] = now
                 self._state["status"] = command
@@ -610,6 +645,15 @@ class LiquidGlassOverlay:
         if phase == "hidden":
             return
         now = time.perf_counter()
+        if (
+            self._state["status"] == "listening"
+            and self._state["text"] != self._state["target_text"]
+            and now >= self._state["next_character_at"]
+        ):
+            self._state["text"] = reveal_next_character(
+                self._state["text"], self._state["target_text"]
+            )
+            self._state["next_character_at"] = now + CHAR_REVEAL_SECONDS
         elapsed = now - self._state["phase_started"]
         targets = self._target_geometry(user32, self._state["max_layout"])
         if phase == "showing":
@@ -624,7 +668,13 @@ class LiquidGlassOverlay:
             alpha = int(lerp(255, 0, fade))
             if progress >= 1:
                 user32.ShowWindow(hwnd, 0)
-                self._state.update(active_id=None, phase="hidden", text="", status="")
+                self._state.update(
+                    active_id=None,
+                    phase="hidden",
+                    text="",
+                    target_text="",
+                    status="",
+                )
                 return
         else:
             alpha = 255

@@ -5,7 +5,6 @@ datas = [
     ('models/asr', 'models/asr'),
     ('models/punctuation', 'models/punctuation'),
     ('config.toml', '.'),
-    ('qwen_final.py', '.'),
 ]
 binaries = []
 hiddenimports = []

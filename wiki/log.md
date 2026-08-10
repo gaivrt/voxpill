@@ -106,6 +106,18 @@ VAD 分句实验因英文 WER 显著退化而拒绝；生产改为 1 秒 cadence
 
 独立审查确认旁路取消只作用于 active preview，不会发布 stale partial、误取消 final、触发 Qwen restart 或加载 Paraformer；Windows tests、长音频 smoke 与真实麦克风验收均通过。
 
+## [2026-08-10 19:34] ingest | 收敛为 static Paraformer 单模型伪流式
+
+生产 preview/final 改为同一个 CPU static Paraformer，删除 Qwen/Torch/CUDA 与 true-streaming Paraformer 的代码、配置、权重和 runtime；保留完整录音 final、final 优先 gate、release 后禁止迟到 partial、目标恢复与一次注入。
+
+## [2026-08-10 20:16] ingest | 自适应伪流式与逐字预览
+
+Paraformer preview 改为 1–2 秒自适应 monotonic deadline，跳过过期轮次；overlay 将每批 partial 以约 45ms/字展开，修订时保留公共前缀，final 仍立即显示并唯一注入。
+
+## [2026-08-10 21:31] review | Static Paraformer pseudo-streaming PASS
+
+独立复审确认单模型自适应 preview、逐字 overlay、完整 final、一次注入与 cleanup 边界正确；14 次真实 session 后 steady-state working set 约 500.3 MiB，低于 512 MiB 上限，无 GPU 模型进程。
+
 ## See Also
 
 - [Overview](overview.md) — 当前项目全景。

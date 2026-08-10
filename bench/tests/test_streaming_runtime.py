@@ -14,6 +14,8 @@ from overlay import (
     expanded_layout,
     OverlayLayout,
     overlay_palette,
+    reconcile_partial_text,
+    reveal_next_character,
     visual_units,
 )
 
@@ -51,6 +53,9 @@ class StreamingRuntimeTest(unittest.TestCase):
         self.assertEqual(ease_in_out_cubic(0), 0)
         self.assertEqual(ease_in_out_cubic(1), 1)
         self.assertEqual(display_text("a\n  b"), "a b")
+        self.assertEqual(reconcile_partial_text("今天天气", "今天真好"), "今天")
+        self.assertEqual(reveal_next_character("今天", "今天真好"), "今天真")
+        self.assertEqual(reveal_next_character("今天天气", "今天真好"), "今天真")
         self.assertEqual(adaptive_width(""), 36)
         self.assertLess(adaptive_width("short"), adaptive_width("这是一段逐渐变长的中文 partial"))
         self.assertLessEqual(adaptive_width("x" * 500), 440)
@@ -66,13 +71,11 @@ class StreamingRuntimeTest(unittest.TestCase):
         config = tomllib.loads((ROOT / "config.toml").read_text(encoding="utf-8"))
         self.assertEqual(config["hotkey"]["key"], "ctrl_r")
         self.assertEqual(config["overlay"]["theme"], "auto")
-        self.assertTrue(config["final_pass"]["enabled"])
-        self.assertEqual(config["final_pass"]["timeout_seconds"], 30.0)
-        self.assertEqual(config["final_pass"]["max_audio_seconds"], 120.0)
-        self.assertEqual(config["final_pass"]["preview_interval_seconds"], 1.0)
-        self.assertEqual(config["final_pass"]["preview_min_seconds"], 0.8)
-        self.assertEqual(config["final_pass"]["preview_timeout_seconds"], 8.0)
-        self.assertIn("voicekey-qwen-win", config["final_pass"]["python"])
+        self.assertEqual(config["recognition"]["max_audio_seconds"], 120.0)
+        self.assertEqual(config["recognition"]["preview_interval_seconds"], 1.0)
+        self.assertEqual(config["recognition"]["preview_max_interval_seconds"], 2.0)
+        self.assertEqual(config["recognition"]["preview_min_seconds"], 0.8)
+        self.assertEqual(config["recognition"]["preview_max_audio_seconds"], 30.0)
         for name in ("model.int8.onnx", "tokens.txt"):
             self.assertTrue((ROOT / "models" / "asr" / name).is_file())
 
@@ -83,15 +86,14 @@ class StreamingRuntimeTest(unittest.TestCase):
 
         self.assertNotIn("load_streaming_asr", main_source)
         self.assertNotIn("create_streaming_session", main_source)
-        cleanup = main_source[main_source.index("    def cleanup():") :]
-        self.assertLess(
-            cleanup.index("job.recording_done.set()"),
-            cleanup.index("qwen_client.close()"),
-        )
-        self.assertIn("cancel_event=stop_flag", main_source)
-        self.assertIn("qwen_client.cancel_preview()", main_source)
+        self.assertNotIn("qwen", main_source.lower())
+        self.assertNotIn("torch", main_source.lower())
+        self.assertIn("OfflineAsr(APP_DIR, say)", main_source)
+        self.assertIn('asr.recognize(pcm, priority="final")', main_source)
         self.assertNotIn("asr-streaming", spec)
         self.assertNotIn("asr-streaming", build)
+        self.assertNotIn("qwen_final", spec)
+        self.assertNotIn("qwen_final", build)
         self.assertIn("models/asr", spec)
         self.assertIn("models\\asr", build)
 
