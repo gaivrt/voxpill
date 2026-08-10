@@ -1,5 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all
+
+project_root = Path(SPECPATH)
 
 datas = [
     ('models/asr', 'models/asr'),
@@ -33,6 +37,8 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='VoxPill',
+    icon=str(project_root / 'assets' / 'voxpill.ico'),
+    version=str(project_root / 'packaging' / 'version_info.txt'),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

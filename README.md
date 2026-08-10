@@ -129,16 +129,27 @@ Sources, exact sizes, and SHA-256 values are documented in
 [`models/README.md`](models/README.md). The downloader prefers the configured
 Hugging Face mirror; pass `--origin` for the canonical source.
 
-## Portable build
+## Windows app release
 
 Download the models, then run:
 
 ```powershell
-.\build-portable.bat
+.\build-release.bat
 ```
 
-The self-contained CPU-only application is created at
-`dist\VoxPill\VoxPill.exe`.
+The release build creates:
+
+- `dist\release\VoxPill-1.0.0-portable.zip` — unzip and launch
+  `VoxPill.exe`; no Python or `uv` is required.
+- `dist\release\VoxPill-1.0.0-setup.exe` — per-user installer with a Start
+  Menu entry, Windows Search discovery, uninstall support, and an optional
+  login-start shortcut (enabled by default).
+- `dist\release\SHA256SUMS.txt` — hashes for release verification.
+
+The full release build requires Inno Setup 6 or 7. Run `build-portable.bat` to
+build only the portable application and ZIP. The application stays as a
+PyInstaller `onedir` bundle because its 300+ MiB offline models would otherwise
+be unpacked again on every launch.
 
 ## Architecture
 

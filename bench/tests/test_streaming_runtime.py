@@ -83,6 +83,10 @@ class StreamingRuntimeTest(unittest.TestCase):
         main_source = (ROOT / "main.py").read_text(encoding="utf-8")
         spec = (ROOT / "voicekey.spec").read_text(encoding="utf-8")
         build = (ROOT / "build-portable.bat").read_text(encoding="utf-8")
+        release_build = (ROOT / "scripts" / "build-release.ps1").read_text(
+            encoding="utf-8"
+        )
+        packaging = spec + build + release_build
 
         self.assertNotIn("load_streaming_asr", main_source)
         self.assertNotIn("create_streaming_session", main_source)
@@ -90,12 +94,23 @@ class StreamingRuntimeTest(unittest.TestCase):
         self.assertNotIn("torch", main_source.lower())
         self.assertIn("OfflineAsr(APP_DIR, say)", main_source)
         self.assertIn('asr.recognize(pcm, priority="final")', main_source)
-        self.assertNotIn("asr-streaming", spec)
-        self.assertNotIn("asr-streaming", build)
-        self.assertNotIn("qwen_final", spec)
-        self.assertNotIn("qwen_final", build)
+        self.assertNotIn("asr-streaming", packaging)
+        self.assertNotIn("qwen_final", packaging)
         self.assertIn("models/asr", spec)
-        self.assertIn("models\\asr", build)
+        self.assertIn("scripts\\build-release.ps1", build)
+        self.assertIn("voicekey.spec", release_build)
+
+    def test_release_version_metadata_agrees(self):
+        version = tomllib.loads(
+            (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )["project"]["version"]
+        for relative_path in (
+            "packaging/version_info.txt",
+            "installer/VoxPill.iss",
+            "README.md",
+        ):
+            metadata = (ROOT / relative_path).read_text(encoding="utf-8")
+            self.assertIn(version, metadata, relative_path)
 
 
 if __name__ == "__main__":

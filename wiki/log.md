@@ -122,3 +122,14 @@ Paraformer preview 改为 1–2 秒自适应 monotonic deadline，跳过过期�
 
 - [Overview](overview.md) — 当前项目全景。
 - [Wiki Schema](../SCHEMA.md) — Wiki 维护规范。
+## [2026-08-10 23:46] ingest | Windows application release pipeline
+
+新增 Windows staging build、portable ZIP、Inno per-user 安装器、开始菜单/自启/卸载语义与远程发布边界；同步更新 Wiki index。
+
+## [2026-08-10 23:48] review | Windows release packaging PASS
+
+独立审查确认 x64 GUI bundle、staging、portable/setup hashes、per-user 安装、开始菜单、自启、卸载与真实 ASR smoke 均通过；记录未签名等非阻塞风险。
+
+## [2026-08-11 01:40] review | Windows 1.0.0 release packaging PASS
+
+版本提升至 1.0.0 并新增一致性测试；独立复审确认 38 tests、完整构建、双产物 hashes、原地升级、快捷方式、卸载版本与 ASR smoke 均通过。
