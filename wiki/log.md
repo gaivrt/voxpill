@@ -133,3 +133,23 @@ Paraformer preview 改为 1–2 秒自适应 monotonic deadline，跳过过期�
 ## [2026-08-11 01:40] review | Windows 1.0.0 release packaging PASS
 
 版本提升至 1.0.0 并新增一致性测试；独立复审确认 38 tests、完整构建、双产物 hashes、原地升级、快捷方式、卸载版本与 ASR smoke 均通过。
+
+## [2026-08-22 23:12] fix | 长时间运行响应性
+
+浮窗从独立线程无界发布 frame 改为可合并的 Win32 timer；松键后仍在等待 recognizer 的 preview 会在 native decode 前取消，避免长时间连续使用时积累 UI 延迟和过期推理。
+
+## [2026-08-22 23:12] review | 长时间运行响应性 PASS
+
+独立复审确认 Win32 timer teardown、等待中 preview 取消与 final 优先边界正确；49 tests、`py_compile` 和 `git diff --check` PASS，残余风险为尚未执行真实 Win32 长时间 soak。
+
+## [2026-08-22 23:24] deploy | 长时间响应性修复安装 PASS
+
+Windows 原生 49 tests、clean release、staging/installed ASR smoke、产物哈希、安装文件、自启、开始菜单、卸载登记和单实例均通过独立复审；新版安装进程已启动。
+
+## [2026-08-22 23:35] contract | Windows 1.0.1 release
+
+定义长时间响应性修复的补丁版本、选择性提交、Windows 构建验证、GitHub tag/release 和资产哈希验收边界；明确排除未完成实验。
+
+## [2026-08-23 00:09] review | Windows 1.0.1 release PASS
+
+独立复审确认性能修复、版本元数据、选择性提交、Windows 49 tests、clean build、staging smoke、ZIP 内容和产物哈希全部通过；未完成实验保持排除。

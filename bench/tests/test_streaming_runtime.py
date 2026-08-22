@@ -100,6 +100,12 @@ class StreamingRuntimeTest(unittest.TestCase):
         self.assertIn("scripts\\build-release.ps1", build)
         self.assertIn("voicekey.spec", release_build)
 
+    def test_overlay_frame_ticks_use_coalescing_windows_timer(self):
+        source = (ROOT / "overlay.py").read_text(encoding="utf-8")
+        self.assertIn("user32.SetTimer(hwnd", source)
+        self.assertIn("user32.KillTimer(hwnd", source)
+        self.assertNotIn("PostMessageW(hwnd, 0x8001", source)
+
     def test_release_version_metadata_agrees(self):
         version = tomllib.loads(
             (ROOT / "pyproject.toml").read_text(encoding="utf-8")

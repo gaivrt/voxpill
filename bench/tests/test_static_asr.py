@@ -68,6 +68,44 @@ class OfflineAsrTest(unittest.TestCase):
 
         self.assertEqual(peak, 1)
 
+    def test_released_preview_cancels_while_waiting_for_pipeline(self):
+        engine = OfflineAsr(loader=lambda *_: object())
+        active_started = threading.Event()
+        release_active = threading.Event()
+        recording_done = threading.Event()
+        preview_result = []
+
+        def transcribe(*_):
+            if not active_started.is_set():
+                active_started.set()
+                release_active.wait(1)
+                return "final"
+            return "stale preview"
+
+        with patch("asr.transcribe", side_effect=transcribe) as recognize:
+            active = threading.Thread(target=engine.recognize, args=(b"active",))
+            preview = threading.Thread(
+                target=lambda: preview_result.append(
+                    engine.recognize(
+                        b"preview",
+                        priority="preview",
+                        cancel_event=recording_done,
+                    )
+                )
+            )
+            active.start()
+            self.assertTrue(active_started.wait(1))
+            preview.start()
+            time.sleep(0.02)
+            recording_done.set()
+            preview.join(0.5)
+            release_active.set()
+            active.join(1)
+
+        self.assertFalse(preview.is_alive())
+        self.assertEqual(preview_result, [""])
+        self.assertEqual(recognize.call_count, 1)
+
 
 class BoundedPcmBufferTest(unittest.TestCase):
     def test_snapshot_is_safe_while_audio_is_appended(self):
@@ -126,7 +164,8 @@ class PseudoStreamingPreviewTest(unittest.TestCase):
             self.result = result
             self.calls = []
 
-        def recognize(self, pcm, *, priority="final"):
+        def recognize(self, pcm, *, priority="final", cancel_event=None):
+            del cancel_event
             self.calls.append((pcm, priority))
             return self.result
 
@@ -183,8 +222,8 @@ class PseudoStreamingPreviewTest(unittest.TestCase):
         partials = []
 
         class BlockingEngine:
-            def recognize(self, pcm, *, priority="final"):
-                del pcm, priority
+            def recognize(self, pcm, *, priority="final", cancel_event=None):
+                del pcm, priority, cancel_event
                 recognition_started.set()
                 allow_result.wait(1)
                 return "stale"

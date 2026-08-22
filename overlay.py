@@ -926,10 +926,12 @@ class LiquidGlassOverlay:
             user32.GetDC.restype = wintypes.HDC
             user32.ReleaseDC.argtypes = (wintypes.HWND, wintypes.HDC)
             user32.ReleaseDC.restype = ctypes.c_int
-            user32.PostMessageW.argtypes = (
-                wintypes.HWND, wintypes.UINT, wparam_type, lparam_type
+            user32.SetTimer.argtypes = (
+                wintypes.HWND, ctypes.c_size_t, wintypes.UINT, ctypes.c_void_p
             )
-            user32.PostMessageW.restype = wintypes.BOOL
+            user32.SetTimer.restype = ctypes.c_size_t
+            user32.KillTimer.argtypes = (wintypes.HWND, ctypes.c_size_t)
+            user32.KillTimer.restype = wintypes.BOOL
             user32.DestroyWindow.argtypes = (wintypes.HWND,)
             user32.DestroyWindow.restype = wintypes.BOOL
             user32.GetMessageW.argtypes = (
@@ -962,18 +964,18 @@ class LiquidGlassOverlay:
             gdi32.DeleteObject.restype = wintypes.BOOL
             gdi32.DeleteDC.argtypes = (wintypes.HDC,)
             gdi32.DeleteDC.restype = wintypes.BOOL
-            ticker_stop = threading.Event()
+            frame_timer_id = 1
 
             @wndproc_type
             def wndproc(hwnd, message, wparam, lparam):
-                if message == 0x8001:  # WM_APP + 1: animation frame
+                if message == 0x0113 and wparam == frame_timer_id:  # WM_TIMER
                     self._tick(hwnd, user32, gdi32)
                     return 0
                 if message == 0x0010:
                     user32.DestroyWindow(hwnd)
                     return 0
                 if message == 0x0002:
-                    ticker_stop.set()
+                    user32.KillTimer(hwnd, frame_timer_id)
                     user32.PostQuitMessage(0)
                     return 0
                 return user32.DefWindowProcW(hwnd, message, wparam, lparam)
@@ -995,30 +997,13 @@ class LiquidGlassOverlay:
                 raise ctypes.WinError(ctypes.get_last_error())
             self._hwnd = hwnd
             user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
-
-            def post_frames() -> None:
-                interval = 1.0 / 60.0
-                deadline = time.perf_counter()
-                while not ticker_stop.is_set():
-                    deadline += interval
-                    user32.PostMessageW(hwnd, 0x8001, 0, 0)
-                    remaining = deadline - time.perf_counter()
-                    if remaining < -0.10:
-                        deadline = time.perf_counter()
-                        remaining = interval
-                    ticker_stop.wait(max(0.0, remaining))
-
-            ticker = threading.Thread(
-                target=post_frames, name="voxpill-overlay-ticker", daemon=True
-            )
-            ticker.start()
+            if not user32.SetTimer(hwnd, frame_timer_id, 16, None):
+                raise ctypes.WinError(ctypes.get_last_error())
             self._ready.set()
             message = wintypes.MSG()
             while user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
                 user32.TranslateMessage(ctypes.byref(message))
                 user32.DispatchMessageW(ctypes.byref(message))
-            ticker_stop.set()
-            ticker.join(timeout=1.0)
             self._release_surface(user32, gdi32)
             user32.UnregisterClassW(class_name, instance)
             self._hwnd = None

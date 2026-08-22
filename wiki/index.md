@@ -1,7 +1,7 @@
 ---
 title: Wiki Index
 type: overview
-updated: 2026-08-11 01:40
+updated: 2026-08-23 00:05
 ---
 
 # Wiki Index
@@ -23,6 +23,8 @@ updated: 2026-08-11 01:40
 
 ## Contracts
 
+- [Windows 1.0.1 release](contracts/windows-1.0.1-release-contract.md) — 长时间响应性修复的版本、构建、审查与 GitHub 发布边界。
+- [Long-running responsiveness](contracts/overlay-frame-scheduling-contract.md) — 合并浮窗 timer frame，并取消仍在等待 recognizer 的过期 preview。
 - [ASR benchmark](contracts/asr-benchmark-contract.md) — 统一语料和资源指标的候选模型评测约束。
 - [Static Paraformer pseudo-streaming](contracts/static-paraformer-pseudo-streaming-contract.md) — CPU-only 单模型 preview/final、资源与退役资产约束。
 - [Streaming overlay](contracts/streaming-overlay-contract.md) — 浮窗、目标恢复与一次注入约束。
@@ -30,6 +32,9 @@ updated: 2026-08-11 01:40
 
 ## Reviews
 
+- [Windows 1.0.1 release review](reviews/windows-1.0.1-release-review.md) — 性能修复、版本、隔离提交、Windows 产物与 smoke PASS。
+- [Responsiveness deployment review](reviews/responsiveness-deployment-review.md) — 新版 rebuild、安装、自启、单实例与 ASR smoke PASS。
+- [Long-running responsiveness review](reviews/long-running-responsiveness-review.md) — 合并 UI frame、取消等待中 preview 与 final 优先边界 PASS。
 - [ASR benchmark review](reviews/asr-benchmark-review.md) — 候选模型 benchmark 审查结论。
 - [Static Paraformer pseudo-streaming review](reviews/static-paraformer-pseudo-streaming-review.md) — 单模型、自适应调度、逐字预览与资源边界 PASS。
 - [Streaming overlay review](reviews/streaming-overlay-review.md) — 浮窗与注入生命周期审查结论。

@@ -139,9 +139,9 @@ Download the models, then run:
 
 The release build creates:
 
-- `dist\release\VoxPill-1.0.0-portable.zip` — unzip and launch
+- `dist\release\VoxPill-1.0.1-portable.zip` — unzip and launch
   `VoxPill.exe`; no Python or `uv` is required.
-- `dist\release\VoxPill-1.0.0-setup.exe` — per-user installer with a Start
+- `dist\release\VoxPill-1.0.1-setup.exe` — per-user installer with a Start
   Menu entry, Windows Search discovery, uninstall support, and an optional
   login-start shortcut (enabled by default).
 - `dist\release\SHA256SUMS.txt` — hashes for release verification.

@@ -1,5 +1,7 @@
 """CPU-only static Paraformer ASR, punctuation, and pseudo-streaming helpers."""
 
+from __future__ import annotations
+
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,22 +84,40 @@ class RecognitionPriorityGate:
         self._final_waiters = 0
 
     @contextmanager
-    def acquire(self, priority: str):
+    def acquire(
+        self,
+        priority: str,
+        cancel_event: threading.Event | None = None,
+    ):
         if priority not in {"preview", "final"}:
             raise ValueError(f"unknown recognition priority: {priority}")
         is_final = priority == "final"
+        cancelled = False
         with self._condition:
             if is_final:
                 self._final_waiters += 1
             try:
+                if not is_final and cancel_event is not None and cancel_event.is_set():
+                    cancelled = True
                 while self._active or (not is_final and self._final_waiters):
-                    self._condition.wait()
-                self._active = True
+                    if (
+                        not is_final
+                        and cancel_event is not None
+                        and cancel_event.is_set()
+                    ):
+                        cancelled = True
+                        break
+                    self._condition.wait(timeout=0.05 if cancel_event is not None else None)
+                if not cancelled:
+                    self._active = True
             finally:
                 if is_final:
                     self._final_waiters -= 1
+        if cancelled:
+            yield False
+            return
         try:
-            yield
+            yield True
         finally:
             with self._condition:
                 self._active = False
@@ -118,8 +138,16 @@ class OfflineAsr:
     def is_loaded(self) -> bool:
         return True
 
-    def recognize(self, pcm: bytes, *, priority: str = "final") -> str:
-        with self._gate.acquire(priority):
+    def recognize(
+        self,
+        pcm: bytes,
+        *,
+        priority: str = "final",
+        cancel_event: threading.Event | None = None,
+    ) -> str:
+        with self._gate.acquire(priority, cancel_event) as acquired:
+            if not acquired:
+                return ""
             return transcribe(self._pipeline, pcm)
 
 
@@ -175,7 +203,11 @@ def run_pseudo_streaming_preview(
             return
         started = time.perf_counter()
         try:
-            text = engine.recognize(pcm, priority="preview").strip()
+            text = engine.recognize(
+                pcm,
+                priority="preview",
+                cancel_event=recording_done,
+            ).strip()
         except Exception as exc:
             say(f"[asr] preview failed: {type(exc).__name__}: {exc}")
             return

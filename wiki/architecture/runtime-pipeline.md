@@ -1,7 +1,7 @@
 ---
 title: 伪流式语音输入运行链路
 type: workflow
-updated: 2026-08-10 21:31
+updated: 2026-08-22 23:12
 ---
 
 # 伪流式语音输入运行链路
@@ -36,13 +36,13 @@ VoxPill 默认把右 Ctrl 作为 push-to-talk 热键。按键稳定 60 ms 后，
   → 可选 Enter 和 committed 动画
 ```
 
-`RecognitionPriorityGate` 保证同一时刻只有一个 sherpa decode；等待中的 final 会越过等待中的 preview。preview 以上次 decode 耗时的两倍作为下次间隔，夹在 1–2 秒内；调度使用 monotonic deadline，超时轮次直接跳过，不会排队或并发补算。static offline decode 本身不支持中途取消，所以松键时 active preview 可以完成计算，但 `recording_done` 与 partial publication 共用 `preview_lock`，结果不会再显示；final 随后取得 gate。没有第二模型、子进程 IPC、fallback 或 GPU 状态。
+`RecognitionPriorityGate` 保证同一时刻只有一个 sherpa decode；等待中的 final 会越过等待中的 preview。preview 以上次 decode 耗时的两倍作为下次间隔，夹在 1–2 秒内；调度使用 monotonic deadline，超时轮次直接跳过，不会排队或并发补算。static offline decode 本身不支持中途取消，所以松键时 active preview 可以完成计算；仍在等待 gate 的 preview 则轮询 `recording_done` 并在取得 recognizer 前退出，避免连续 session 积累过期推理。`recording_done` 与 partial publication 共用 `preview_lock`，迟到结果不会再显示；final 始终不可取消并保持优先。没有第二模型、子进程 IPC、fallback 或 GPU 状态。
 
 单轮模型或剪贴板异常不会杀死常驻 consumer。短于 `behavior.min_seconds`、超过 120 秒 PCM 上限或空 final 的录音会被丢弃。幂等 cleanup 设置 stop flag/recording_done、停止 stream、发送 capture sentinel、限时 join worker，最后关闭 overlay UI thread。
 
 ## 浮窗与注入边界
 
-`LiquidGlassOverlay` 使用独立 Win32 UI thread、60 Hz ticker 与 per-pixel-alpha layered window；topmost、click-through、no-activate，不夺取输入焦点。partial 只更新目标文本，ticker 约每 45ms 显示一个新字符；ASR 修订时只回退到公共前缀，finalizing 则立即显示完整 final。auto theme 读取 Windows `AppsUseLightTheme`。文字保持单行、最大 440 DIP，溢出时保留尾部。
+`LiquidGlassOverlay` 使用独立 Win32 UI thread、约 60 Hz 的 `WM_TIMER` 与 per-pixel-alpha layered window；Win32 timer tick 在 UI thread 忙碌时会合并，不会像独立 producer 的 `PostMessageW` 那样积累过期帧。窗口保持 topmost、click-through、no-activate，不夺取输入焦点。partial 只更新目标文本，timer 约每 45ms 显示一个新字符；ASR 修订时只回退到公共前缀，finalizing 则立即显示完整 final。auto theme 读取 Windows `AppsUseLightTheme`。文字保持单行、最大 440 DIP，溢出时保留尾部。
 
 preview 从不编辑目标应用。consumer 取得 punctuated final 后验证并恢复录音开始时保存的 HWND，只有恢复成功才调用 `inject.paste_text` 或 `inject.type_unicode`；目标无效时 dismiss 并放弃注入。
 
