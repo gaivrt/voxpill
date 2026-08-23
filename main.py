@@ -20,8 +20,10 @@ PC 麦克风 → static Paraformer accumulated-audio previews + final → 文本
 """
 import ctypes
 from ctypes import wintypes
+from array import array
 from dataclasses import dataclass, field
 import itertools
+import math
 import queue
 import sys
 import threading
@@ -37,8 +39,10 @@ from asr import (
     OfflineAsr,
     RecognitionConfig,
     SR,
+    has_acoustic_activity,
     run_pseudo_streaming_preview,
 )
+from process_qos import enable_high_qos
 from overlay import LiquidGlassOverlay
 
 APP_DIR = (
@@ -46,6 +50,30 @@ APP_DIR = (
     if getattr(sys, "frozen", False)
     else Path(__file__).resolve().parent
 )
+
+
+def packaged_activity_smoke() -> bool:
+    """Exercise the frozen WebRTC wrapper and native extension without a mic."""
+    config = RecognitionConfig()
+    silence = bytes(SR * 2)
+    voiced = array(
+        "h",
+        (
+            int(
+                260
+                * (
+                    math.sin(2 * math.pi * 220 * index / SR)
+                    + 0.45 * math.sin(2 * math.pi * 440 * index / SR)
+                    + 0.2 * math.sin(2 * math.pi * 660 * index / SR)
+                )
+                / 1.65
+            )
+            for index in range(SR)
+        ),
+    ).tobytes()
+    return not has_acoustic_activity(silence, config) and has_acoustic_activity(
+        voiced, config
+    )
 
 try:
     import tomllib
@@ -182,6 +210,7 @@ def main():
     inject_method = str(bh.get("inject_method", "paste")).lower()
     device = parse_device(au.get("device"))
 
+    enable_high_qos(say)
     glass = LiquidGlassOverlay(say, theme=str(ov.get("theme", "auto")).lower())
     asr = OfflineAsr(APP_DIR, say)
     say(f"\n就绪 — 按住 {key_name} 说话，松开提交。\n")
@@ -256,6 +285,16 @@ def main():
             say(f"[asr] preview ready ({duration:.1f}s captured)")
             glass.partial(job.session_id, text)
 
+        def log_preview_timing(timing):
+            duration = job.pcm_buffer.total_bytes / (SR * 2)
+            say(
+                "[perf] preview "
+                f"audio={duration:.1f}s gate={timing.gate_seconds:.3f}s "
+                f"decode={timing.decode_seconds:.3f}s "
+                f"punc={timing.punctuation_seconds:.3f}s "
+                f"total={timing.total_seconds:.3f}s"
+            )
+
         run_pseudo_streaming_preview(
             asr,
             job.pcm_buffer,
@@ -264,6 +303,7 @@ def main():
             publish_preview,
             say,
             job.preview_lock,
+            log_preview_timing,
         )
 
     def start_rec():
@@ -364,14 +404,32 @@ def main():
                     glass.dismiss(job.session_id)
                     continue
                 pcm = job.pcm_buffer.to_bytes()
+                if not has_acoustic_activity(pcm, recognition_cfg):
+                    say(f"■ ({dur:.1f}s) no speech; ignored")
+                    glass.dismiss(job.session_id)
+                    continue
+                final_timing = []
                 try:
-                    text = asr.recognize(pcm, priority="final").strip()
+                    text = asr.recognize(
+                        pcm,
+                        priority="final",
+                        on_timing=final_timing.append,
+                    ).strip()
                 except Exception as exc:
                     say(
                         "[asr] final recognition failed: "
                         f"{type(exc).__name__}: {exc}"
                     )
                     text = ""
+                if final_timing:
+                    timing = final_timing[0]
+                    say(
+                        "[perf] final "
+                        f"audio={dur:.1f}s gate={timing.gate_seconds:.3f}s "
+                        f"decode={timing.decode_seconds:.3f}s "
+                        f"punc={timing.punctuation_seconds:.3f}s "
+                        f"total={timing.total_seconds:.3f}s"
+                    )
                 if text:
                     say(f"[asr] final ready ({dur:.1f}s audio)")
                     glass.finalizing(job.session_id, text)
@@ -469,4 +527,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--smoke-acoustic-gate"]:
+        raise SystemExit(0 if packaged_activity_smoke() else 1)
     main()

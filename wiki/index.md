@@ -1,7 +1,7 @@
 ---
 title: Wiki Index
 type: overview
-updated: 2026-08-23 00:05
+updated: 2026-08-23 11:44
 ---
 
 # Wiki Index
@@ -23,6 +23,9 @@ updated: 2026-08-23 00:05
 
 ## Contracts
 
+- [No-speech hallucination gate](contracts/no-speech-gate-contract.md) — 静音/稳态底噪 acoustic activity 判定、preview/final 抑制与 1.0.2 验证边界。
+- [Windows 1.0.2 release](contracts/windows-1.0.2-release-contract.md) — HighQoS 修复的选择性提交、tag、GitHub Release 与远端资产哈希边界。
+- [Windows HighQoS long-utterance latency](contracts/windows-high-qos-latency-contract.md) — 后台进程 HighQoS、识别分段耗时、长文本浮窗裁剪与本地 1.0.2 部署边界。
 - [Windows 1.0.1 release](contracts/windows-1.0.1-release-contract.md) — 长时间响应性修复的版本、构建、审查与 GitHub 发布边界。
 - [Long-running responsiveness](contracts/overlay-frame-scheduling-contract.md) — 合并浮窗 timer frame，并取消仍在等待 recognizer 的过期 preview。
 - [ASR benchmark](contracts/asr-benchmark-contract.md) — 统一语料和资源指标的候选模型评测约束。
@@ -32,6 +35,9 @@ updated: 2026-08-23 00:05
 
 ## Reviews
 
+- [No-speech hallucination gate review](reviews/no-speech-gate-review.md) — WebRTC VAD、能量动态、谐波 fallback、最终打包与安装 smoke PASS。
+- [Windows 1.0.2 release review](reviews/windows-1.0.2-release-review.md) — 选择性提交、版本、产物哈希与实验排除边界 PASS。
+- [Windows HighQoS long-utterance latency review](reviews/windows-high-qos-latency-review.md) — HighQoS、长句性能、1.0.2 构建安装与自启验收 PASS。
 - [Windows 1.0.1 release review](reviews/windows-1.0.1-release-review.md) — 性能修复、版本、隔离提交、Windows 产物与 smoke PASS。
 - [Responsiveness deployment review](reviews/responsiveness-deployment-review.md) — 新版 rebuild、安装、自启、单实例与 ASR smoke PASS。
 - [Long-running responsiveness review](reviews/long-running-responsiveness-review.md) — 合并 UI frame、取消等待中 preview 与 final 优先边界 PASS。

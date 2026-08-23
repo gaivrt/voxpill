@@ -719,10 +719,14 @@ class LiquidGlassOverlay:
         """Elide the changing prefix; never let a partial trigger line wrapping."""
         if draw.textlength(text, font=font) <= max_width:
             return text
-        suffix = text
-        while suffix and draw.textlength("…" + suffix, font=font) > max_width:
-            suffix = suffix[1:]
-        return "…" + suffix.lstrip()
+        low, high = 0, len(text)
+        while low < high:
+            middle = (low + high) // 2
+            if draw.textlength("…" + text[middle:], font=font) <= max_width:
+                high = middle
+            else:
+                low = middle + 1
+        return "…" + text[low:].lstrip()
 
     def _render_frame(
         self, width: int, height: int, x: int, y: int, now: float,

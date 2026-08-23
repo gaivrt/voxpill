@@ -17,6 +17,7 @@ from overlay import (
     reconcile_partial_text,
     reveal_next_character,
     visual_units,
+    LiquidGlassOverlay,
 )
 
 
@@ -67,6 +68,25 @@ class StreamingRuntimeTest(unittest.TestCase):
         self.assertEqual(overlay_palette(False)[0], (250, 249, 245))
         self.assertEqual(overlay_palette(False)[2], (80, 75, 65, 32))
 
+    def test_long_overlay_text_finds_the_same_suffix_with_bounded_measurements(self):
+        class FixedWidthDraw:
+            def __init__(self):
+                self.calls = 0
+
+            def textlength(self, text, font=None):
+                del font
+                self.calls += 1
+                return len(text) * 10
+
+        text = "x" * 200
+        draw = FixedWidthDraw()
+        overlay = object.__new__(LiquidGlassOverlay)
+
+        fitted = overlay._fit_single_line(text, draw, None, 100)
+
+        self.assertEqual(fitted, "…" + "x" * 9)
+        self.assertLessEqual(draw.calls, 10)
+
     def test_default_hotkey_and_pseudo_streaming_config(self):
         config = tomllib.loads((ROOT / "config.toml").read_text(encoding="utf-8"))
         self.assertEqual(config["hotkey"]["key"], "ctrl_r")
@@ -76,6 +96,9 @@ class StreamingRuntimeTest(unittest.TestCase):
         self.assertEqual(config["recognition"]["preview_max_interval_seconds"], 2.0)
         self.assertEqual(config["recognition"]["preview_min_seconds"], 0.8)
         self.assertEqual(config["recognition"]["preview_max_audio_seconds"], 30.0)
+        self.assertEqual(config["recognition"]["activity_rms_floor"], 50.0)
+        self.assertEqual(config["recognition"]["activity_min_seconds"], 0.12)
+        self.assertEqual(config["recognition"]["activity_vad_mode"], 2)
         for name in ("model.int8.onnx", "tokens.txt"):
             self.assertTrue((ROOT / "models" / "asr" / name).is_file())
 
@@ -93,10 +116,16 @@ class StreamingRuntimeTest(unittest.TestCase):
         self.assertNotIn("qwen", main_source.lower())
         self.assertNotIn("torch", main_source.lower())
         self.assertIn("OfflineAsr(APP_DIR, say)", main_source)
-        self.assertIn('asr.recognize(pcm, priority="final")', main_source)
+        self.assertIn('priority="final"', main_source)
+        self.assertIn("enable_high_qos(say)", main_source)
         self.assertNotIn("asr-streaming", packaging)
         self.assertNotIn("qwen_final", packaging)
         self.assertIn("models/asr", spec)
+        self.assertIn("hookspath=['packaging/pyinstaller-hooks']", spec)
+        vad_hook = (
+            ROOT / "packaging" / "pyinstaller-hooks" / "hook-webrtcvad.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('copy_metadata("webrtcvad-wheels")', vad_hook)
         self.assertIn("scripts\\build-release.ps1", build)
         self.assertIn("voicekey.spec", release_build)
 
@@ -110,6 +139,12 @@ class StreamingRuntimeTest(unittest.TestCase):
         version = tomllib.loads(
             (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         )["project"]["version"]
+        numeric_version = tuple(int(part) for part in version.split(".")) + (0,)
+        version_info = (ROOT / "packaging/version_info.txt").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(f"filevers={numeric_version}", version_info)
+        self.assertIn(f"prodvers={numeric_version}", version_info)
         for relative_path in (
             "packaging/version_info.txt",
             "installer/VoxPill.iss",

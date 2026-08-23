@@ -23,6 +23,10 @@ preview_max_interval_seconds = 2.0
 preview_min_seconds = 0.8
 preview_max_audio_seconds = 30.0
 max_audio_seconds = 120.0  # 超过上限不保留完整 PCM，本轮忽略
+# No-speech gate：20 ms 帧能量需持续高于录音自身底噪，避免静音时模型幻觉乱码。
+activity_rms_floor = 50.0
+activity_min_seconds = 0.12
+activity_vad_mode = 2
 
 [audio]
 device = ""         # 麦克风设备名或编号；留空 = 系统默认输入设备

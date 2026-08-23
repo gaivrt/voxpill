@@ -153,3 +153,27 @@ Windows 原生 49 tests、clean release、staging/installed ASR smoke、产物�
 ## [2026-08-23 00:09] review | Windows 1.0.1 release PASS
 
 独立复审确认性能修复、版本元数据、选择性提交、Windows 49 tests、clean build、staging smoke、ZIP 内容和产物哈希全部通过；未完成实验保持排除。
+
+## [2026-08-23 11:44] fix | HighQoS 长句延迟
+
+Windows 进程启动时显式关闭 execution-speed throttling，避免后台自启进程落入 EcoQoS；preview/final 新增 gate、decode、punctuation、total 分段耗时。浮窗长文本尾部裁剪由逐字符扫描改为二分定位，版本提升至本地 1.0.2。
+
+## [2026-08-23 11:44] review | Windows HighQoS latency PASS
+
+独立复审关闭 PE fixed version 初始不一致后确认 PASS；53 tests、HighQoS 状态、16.588 秒长音频 0.717 秒 decode、staging smoke、双产物 hashes、installed/staging 同 hash、1.0.2 numeric/string versions、自启快捷方式与单实例均通过。
+
+## [2026-08-23 15:03] contract | Windows 1.0.2 release
+
+用户确认远程发布后，定义只提交 HighQoS 修复及直接相关文档、排除本地实验、推送 main/tag、创建 GitHub Release 并核对公开资产哈希的边界。
+
+## [2026-08-23 15:08] review | Windows 1.0.2 pre-release PASS
+
+独立复审确认 staged diff 只含 1.0.2 HighQoS 修复及直接文档，所有 rolling-final/stable-prefix 实验仍保持 untracked/unstaged；版本元数据、53 tests、PE parts 与本地产物 hashes 一致。
+
+## [2026-08-23 15:18] fix | 静音 hallucination gate
+
+发现 static Paraformer 对全零 PCM 和稳态底噪也会产生重复 token；preview/final 进入模型前新增 WebRTC VAD、20 ms 帧能量动态和保守谐波 fallback。全零、白噪、有色风扇噪声、60 Hz 电噪与稳态单频音均拒绝；持续多谐波轻声及 12 条现有语料的 25% 音量缩放全部通过。
+
+## [2026-08-23 15:35] review | 静音 hallucination gate PASS
+
+独立复审确认持续轻声、leading silence、稳态噪声与原生 VAD 打包 blocker 均关闭；60 tests、staging/installed gate smoke、最终 EXE/portable/setup hashes 与 1.0.2 重装验收全部通过。

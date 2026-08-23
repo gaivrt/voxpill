@@ -5,6 +5,8 @@ import time
 import unittest
 from unittest.mock import patch
 
+import numpy as np
+
 from asr import (
     adaptive_preview_interval,
     advance_preview_deadline,
@@ -12,6 +14,7 @@ from asr import (
     OfflineAsr,
     RecognitionConfig,
     RecognitionPriorityGate,
+    has_acoustic_activity,
     run_pseudo_streaming_preview,
 )
 
@@ -35,6 +38,22 @@ class OfflineAsrTest(unittest.TestCase):
 
         self.assertEqual(len(loads), 1)
         self.assertEqual(recognize.call_count, 2)
+
+    def test_timing_separates_gate_decode_punctuation_and_total(self):
+        engine = OfflineAsr(loader=lambda *_: object())
+        timings = []
+
+        with (
+            patch("asr.time.perf_counter", side_effect=[10.0, 10.2, 10.8]),
+            patch("asr.transcribe_timed", return_value=("ok", 0.5, 0.01)),
+        ):
+            self.assertEqual(engine.recognize(b"pcm", on_timing=timings.append), "ok")
+
+        self.assertEqual(len(timings), 1)
+        self.assertAlmostEqual(timings[0].gate_seconds, 0.2)
+        self.assertEqual(timings[0].decode_seconds, 0.5)
+        self.assertEqual(timings[0].punctuation_seconds, 0.01)
+        self.assertAlmostEqual(timings[0].total_seconds, 0.8)
 
     def test_one_pipeline_serializes_parallel_recognition(self):
         engine = OfflineAsr(loader=lambda *_: object())
@@ -126,6 +145,77 @@ class BoundedPcmBufferTest(unittest.TestCase):
         self.assertEqual(buffer.total_bytes, 5)
 
 
+class AcousticActivityTest(unittest.TestCase):
+    def setUp(self):
+        self.config = RecognitionConfig(
+            activity_rms_floor=50.0,
+            activity_min_seconds=0.12,
+            activity_vad_mode=2,
+        )
+
+    def test_zero_and_steady_noise_are_not_speech(self):
+        zeros = np.zeros(16000 * 4, dtype=np.int16)
+        noise = np.random.default_rng(7).normal(0, 300, 16000 * 4).astype(np.int16)
+
+        self.assertFalse(has_acoustic_activity(zeros.tobytes(), self.config))
+        self.assertFalse(has_acoustic_activity(noise.tobytes(), self.config))
+
+    def test_brief_impulse_is_not_speech(self):
+        samples = np.zeros(16000, dtype=np.int16)
+        samples[320:960] = 5000
+
+        self.assertFalse(has_acoustic_activity(samples.tobytes(), self.config))
+
+    def test_quiet_speech_like_bursts_are_speech(self):
+        samples = np.zeros(16000, dtype=np.int16)
+        tone = (np.sin(np.arange(320) * 0.2) * 260).astype(np.int16)
+        for start in range(1600, 1600 + 8 * 640, 640):
+            samples[start : start + 320] = tone
+
+        self.assertTrue(has_acoustic_activity(samples.tobytes(), self.config))
+
+    def test_sustained_quiet_voiced_waveform_is_speech(self):
+        phase = np.arange(16000, dtype=np.float32) * (2 * np.pi * 220 / 16000)
+        voiced = np.sin(phase) + 0.45 * np.sin(phase * 2) + 0.2 * np.sin(phase * 3)
+        voiced /= np.max(np.abs(voiced))
+        for amplitude in (100, 260, 1000, 5000):
+            samples = (voiced * amplitude).astype(np.int16)
+            with self.subTest(amplitude=amplitude):
+                self.assertTrue(
+                    has_acoustic_activity(samples.tobytes(), self.config)
+                )
+
+    def test_leading_silence_does_not_hide_sustained_quiet_voice(self):
+        phase = np.arange(16000, dtype=np.float32) * (2 * np.pi * 220 / 16000)
+        voiced = np.sin(phase) + 0.45 * np.sin(phase * 2) + 0.2 * np.sin(phase * 3)
+        voiced /= np.max(np.abs(voiced))
+        silence = np.zeros(16000, dtype=np.int16)
+        for amplitude in (100, 260):
+            samples = np.concatenate((silence, (voiced * amplitude).astype(np.int16)))
+            with self.subTest(amplitude=amplitude):
+                self.assertTrue(
+                    has_acoustic_activity(samples.tobytes(), self.config)
+                )
+
+    def test_electrical_hum_and_colored_noise_are_not_speech(self):
+        phase = np.arange(16000, dtype=np.float32) * (2 * np.pi * 60 / 16000)
+        hum = (np.sin(phase) * 1000).astype(np.int16)
+        voice_band_tone = (
+            np.sin(np.arange(16000) * (2 * np.pi * 220 / 16000)) * 1000
+        ).astype(np.int16)
+        rng = np.random.default_rng(11)
+        source = rng.normal(0, 1, 16000)
+        colored = np.empty(16000)
+        colored[0] = source[0]
+        for index in range(1, len(colored)):
+            colored[index] = 0.98 * colored[index - 1] + source[index]
+        colored = (colored / np.sqrt(np.mean(colored**2)) * 1000).astype(np.int16)
+
+        self.assertFalse(has_acoustic_activity(hum.tobytes(), self.config))
+        self.assertFalse(has_acoustic_activity(voice_band_tone.tobytes(), self.config))
+        self.assertFalse(has_acoustic_activity(colored.tobytes(), self.config))
+
+
 class RecognitionPriorityGateTest(unittest.TestCase):
     def test_waiting_final_passes_a_waiting_preview(self):
         gate = RecognitionPriorityGate()
@@ -177,12 +267,20 @@ class PseudoStreamingPreviewTest(unittest.TestCase):
             preview_min_seconds=0.001,
             preview_max_audio_seconds=30.0,
             max_audio_seconds=120.0,
+            activity_min_seconds=0.02,
         )
+
+    @staticmethod
+    def speech_pcm():
+        samples = np.zeros(3200, dtype=np.int16)
+        samples[320:960] = 1000
+        return samples.tobytes()
 
     def test_preview_uses_accumulated_pcm_and_stops_after_release(self):
         engine = self.FakeEngine()
-        buffer = BoundedPcmBuffer(max_bytes=1000)
-        buffer.append(b"x" * 64)
+        pcm = self.speech_pcm()
+        buffer = BoundedPcmBuffer(max_bytes=10000)
+        buffer.append(pcm)
         done = threading.Event()
         partials = []
 
@@ -198,10 +296,27 @@ class PseudoStreamingPreviewTest(unittest.TestCase):
         thread.join(1)
 
         self.assertEqual(partials, ["partial"])
-        self.assertEqual(engine.calls[0], (b"x" * 64, "preview"))
+        self.assertEqual(engine.calls[0], (pcm, "preview"))
         call_count = len(engine.calls)
         time.sleep(0.03)
         self.assertEqual(len(engine.calls), call_count)
+
+    def test_preview_skips_no_speech_pcm(self):
+        engine = self.FakeEngine()
+        buffer = BoundedPcmBuffer(max_bytes=100000)
+        buffer.append(bytes(16000 * 2))
+        done = threading.Event()
+
+        thread = threading.Thread(
+            target=run_pseudo_streaming_preview,
+            args=(engine, buffer, done, self.config(), lambda _: None),
+        )
+        thread.start()
+        time.sleep(0.04)
+        done.set()
+        thread.join(1)
+
+        self.assertEqual(engine.calls, [])
 
     def test_adaptive_interval_is_bounded_by_configured_range(self):
         self.assertEqual(adaptive_preview_interval(0.1, 1.0, 2.0), 1.0)
@@ -213,8 +328,8 @@ class PseudoStreamingPreviewTest(unittest.TestCase):
         self.assertEqual(advance_preview_deadline(10.0, 13.2, 1.0), 14.0)
 
     def test_release_and_publish_share_one_session_lock(self):
-        buffer = BoundedPcmBuffer(max_bytes=1000)
-        buffer.append(b"x" * 64)
+        buffer = BoundedPcmBuffer(max_bytes=10000)
+        buffer.append(self.speech_pcm())
         done = threading.Event()
         session_lock = threading.Lock()
         recognition_started = threading.Event()

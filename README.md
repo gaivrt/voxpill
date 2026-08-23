@@ -110,6 +110,9 @@ preview_max_interval_seconds = 2.0
 preview_min_seconds = 0.8
 preview_max_audio_seconds = 30.0
 max_audio_seconds = 120.0
+activity_rms_floor = 50.0
+activity_min_seconds = 0.12
+activity_vad_mode = 2
 
 [audio]
 device = ""                  # empty = Windows default input device
@@ -139,9 +142,9 @@ Download the models, then run:
 
 The release build creates:
 
-- `dist\release\VoxPill-1.0.1-portable.zip` — unzip and launch
+- `dist\release\VoxPill-1.0.2-portable.zip` — unzip and launch
   `VoxPill.exe`; no Python or `uv` is required.
-- `dist\release\VoxPill-1.0.1-setup.exe` — per-user installer with a Start
+- `dist\release\VoxPill-1.0.2-setup.exe` — per-user installer with a Start
   Menu entry, Windows Search discovery, uninstall support, and an optional
   login-start shortcut (enabled by default).
 - `dist\release\SHA256SUMS.txt` — hashes for release verification.

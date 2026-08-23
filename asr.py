@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
+import math
 import threading
 import time
 from typing import Callable, Mapping
@@ -26,6 +27,9 @@ class RecognitionConfig:
     preview_min_seconds: float = 0.8
     preview_max_audio_seconds: float = 30.0
     max_audio_seconds: float = 120.0
+    activity_rms_floor: float = 50.0
+    activity_min_seconds: float = 0.12
+    activity_vad_mode: int = 2
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, object]) -> "RecognitionConfig":
@@ -45,7 +49,96 @@ class RecognitionConfig:
                 float(values.get("preview_max_audio_seconds", 30.0)),
             ),
             max_audio_seconds=max(1.0, float(values.get("max_audio_seconds", 120.0))),
+            activity_rms_floor=max(
+                1.0, float(values.get("activity_rms_floor", 50.0))
+            ),
+            activity_min_seconds=max(
+                0.04, float(values.get("activity_min_seconds", 0.12))
+            ),
+            activity_vad_mode=max(
+                0, min(3, int(values.get("activity_vad_mode", 2)))
+            ),
         )
+
+
+@dataclass(frozen=True)
+class RecognitionTiming:
+    gate_seconds: float
+    decode_seconds: float
+    punctuation_seconds: float
+    total_seconds: float
+
+
+def has_acoustic_activity(pcm: bytes, config: RecognitionConfig) -> bool:
+    """Detect speech with WebRTC VAD plus conservative sustained-voice fallback."""
+    import numpy as np
+    import webrtcvad
+
+    frame_samples = SR // 50  # 20 ms
+    sample_count = len(pcm) // 2
+    frame_count = sample_count // frame_samples
+    if frame_count <= 0:
+        return False
+    samples = np.frombuffer(
+        pcm, dtype=np.int16, count=frame_count * frame_samples
+    ).astype(np.float32)
+    frames = samples.reshape(frame_count, frame_samples)
+    rms = np.sqrt(np.mean(frames * frames, axis=1))
+    required_frames = max(
+        1, math.ceil(config.activity_min_seconds * SR / frame_samples)
+    )
+    if int(np.count_nonzero(rms > config.activity_rms_floor)) < required_frames:
+        return False
+
+    vad = webrtcvad.Vad(config.activity_vad_mode)
+    voiced_frames = sum(
+        vad.is_speech(
+            pcm[index * frame_samples * 2 : (index + 1) * frame_samples * 2],
+            SR,
+        )
+        for index in range(frame_count)
+    )
+    low, high = np.percentile(rms, (10, 90))
+    if voiced_frames >= required_frames and high >= max(
+        config.activity_rms_floor * 2.0, low * 2.5
+    ):
+        return True
+
+    # A short sustained vowel has little energy variation and may be too quiet
+    # for WebRTC VAD. Preserve only harmonic structure with a fundamental in
+    # the human voice range; single-frequency hum and colored noise fail this.
+    analysis_frame_count = min(frame_count, SR // frame_samples)
+    frame_energy = rms * rms
+    cumulative_energy = np.concatenate(
+        (np.zeros(1, dtype=np.float32), np.cumsum(frame_energy, dtype=np.float32))
+    )
+    window_energy = (
+        cumulative_energy[analysis_frame_count:]
+        - cumulative_energy[:-analysis_frame_count]
+    )
+    analysis_start_frame = int(np.argmax(window_energy))
+    analysis_samples = samples[
+        analysis_start_frame * frame_samples
+        : (analysis_start_frame + analysis_frame_count) * frame_samples
+    ]
+    if len(analysis_samples) < required_frames * frame_samples:
+        return False
+    centered = analysis_samples - float(np.mean(analysis_samples))
+    windowed = centered * np.hanning(len(centered)).astype(np.float32)
+    power = np.abs(np.fft.rfft(windowed)) ** 2
+    frequencies = np.fft.rfftfreq(len(windowed), 1.0 / SR)
+    audible = (frequencies >= 40.0) & (frequencies <= 4000.0)
+    voice_fundamental = (frequencies >= 80.0) & (frequencies <= 300.0)
+    total_power = float(np.sum(power[audible]))
+    if total_power <= 1e-12:
+        return False
+    fundamental_bins = np.flatnonzero(voice_fundamental)
+    fundamental_index = int(fundamental_bins[np.argmax(power[voice_fundamental])])
+    fundamental_hz = float(frequencies[fundamental_index])
+    harmonic = np.abs(frequencies - fundamental_hz * 2.0) <= 2.0
+    fundamental_ratio = float(power[fundamental_index]) / total_power
+    harmonic_ratio = float(np.sum(power[harmonic])) / total_power
+    return fundamental_ratio >= 0.08 and harmonic_ratio >= 0.02
 
 
 @dataclass
@@ -144,11 +237,27 @@ class OfflineAsr:
         *,
         priority: str = "final",
         cancel_event: threading.Event | None = None,
+        on_timing: Callable[[RecognitionTiming], None] | None = None,
     ) -> str:
+        started = time.perf_counter()
         with self._gate.acquire(priority, cancel_event) as acquired:
             if not acquired:
                 return ""
-            return transcribe(self._pipeline, pcm)
+            gate_seconds = time.perf_counter() - started
+            if on_timing is None:
+                return transcribe(self._pipeline, pcm)
+            text, decode_seconds, punctuation_seconds = transcribe_timed(
+                self._pipeline, pcm
+            )
+            on_timing(
+                RecognitionTiming(
+                    gate_seconds=gate_seconds,
+                    decode_seconds=decode_seconds,
+                    punctuation_seconds=punctuation_seconds,
+                    total_seconds=time.perf_counter() - started,
+                )
+            )
+            return text
 
 
 def adaptive_preview_interval(
@@ -181,6 +290,7 @@ def run_pseudo_streaming_preview(
     on_partial: Callable[[str], None],
     say: Callable[..., None] = print,
     session_lock: threading.Lock | None = None,
+    on_timing: Callable[[RecognitionTiming], None] | None = None,
 ) -> None:
     """Adaptively re-decode accumulated PCM without queuing stale previews."""
     last_text = ""
@@ -201,13 +311,20 @@ def run_pseudo_streaming_preview(
         if duration > config.preview_max_audio_seconds:
             say("[asr] preview limit reached; waiting for final")
             return
+        if not has_acoustic_activity(pcm, config):
+            deadline = advance_preview_deadline(
+                deadline, time.monotonic(), config.preview_interval_seconds
+            )
+            continue
         started = time.perf_counter()
         try:
-            text = engine.recognize(
-                pcm,
-                priority="preview",
-                cancel_event=recording_done,
-            ).strip()
+            kwargs = {
+                "priority": "preview",
+                "cancel_event": recording_done,
+            }
+            if on_timing is not None:
+                kwargs["on_timing"] = on_timing
+            text = engine.recognize(pcm, **kwargs).strip()
         except Exception as exc:
             say(f"[asr] preview failed: {type(exc).__name__}: {exc}")
             return
@@ -260,11 +377,21 @@ def load_asr(base_dir: Path | None = None, say=print) -> AsrPipeline:
 
 def transcribe(pipeline: AsrPipeline, pcm: bytes) -> str:
     """Convert mono 16 kHz signed-16-bit PCM to punctuated text."""
+    return transcribe_timed(pipeline, pcm)[0]
+
+
+def transcribe_timed(pipeline: AsrPipeline, pcm: bytes) -> tuple[str, float, float]:
+    """Transcribe PCM and expose native decode and punctuation durations."""
     import numpy as np
 
     samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
     stream = pipeline.recognizer.create_stream()
     stream.accept_waveform(SR, samples)
+    decode_started = time.perf_counter()
     pipeline.recognizer.decode_stream(stream)
+    decode_seconds = time.perf_counter() - decode_started
     text = stream.result.text.strip()
-    return pipeline.punctuation.add_punctuation(text) if text else ""
+    punctuation_started = time.perf_counter()
+    punctuated = pipeline.punctuation.add_punctuation(text) if text else ""
+    punctuation_seconds = time.perf_counter() - punctuation_started
+    return punctuated, decode_seconds, punctuation_seconds

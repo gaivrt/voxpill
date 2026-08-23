@@ -1,7 +1,7 @@
 ---
 title: 伪流式语音输入运行链路
 type: workflow
-updated: 2026-08-22 23:12
+updated: 2026-08-23 11:44
 ---
 
 # 伪流式语音输入运行链路
@@ -38,11 +38,15 @@ VoxPill 默认把右 Ctrl 作为 push-to-talk 热键。按键稳定 60 ms 后，
 
 `RecognitionPriorityGate` 保证同一时刻只有一个 sherpa decode；等待中的 final 会越过等待中的 preview。preview 以上次 decode 耗时的两倍作为下次间隔，夹在 1–2 秒内；调度使用 monotonic deadline，超时轮次直接跳过，不会排队或并发补算。static offline decode 本身不支持中途取消，所以松键时 active preview 可以完成计算；仍在等待 gate 的 preview 则轮询 `recording_done` 并在取得 recognizer 前退出，避免连续 session 积累过期推理。`recording_done` 与 partial publication 共用 `preview_lock`，迟到结果不会再显示；final 始终不可取消并保持优先。没有第二模型、子进程 IPC、fallback 或 GPU 状态。
 
+Windows 启动时，进程通过 `ProcessPowerThrottling` 显式关闭 execution-speed throttling，避免后台托盘进程被 EcoQoS 调度到节能核心；调用失败时仅记录日志并继续启动。每次 preview/final 记录 recognition gate、native decode、punctuation 与 total 耗时，便于区分调度等待和模型计算。
+
+preview 和 final 在进入 recognizer 前共用 no-speech gate：先把 PCM 划成 20 ms 帧，要求至少 120 ms 超过保守绝对能量下限；WebRTC VAD 判定达到持续时长且帧能量具有语音动态时放行。对 WebRTC VAD 可能漏掉的安静持续元音，只在 80–300 Hz 基频及其二次谐波同时显著时保守放行。纯静音、稳定白噪/有色风扇噪声、50/60 Hz 电噪、稳态单频音和短促点击不会触发模型、浮窗文字或注入；合格语音仍沿用原 recognition 路径。阈值位于 `config.toml [recognition]`，便于特殊麦克风调整。
+
 单轮模型或剪贴板异常不会杀死常驻 consumer。短于 `behavior.min_seconds`、超过 120 秒 PCM 上限或空 final 的录音会被丢弃。幂等 cleanup 设置 stop flag/recording_done、停止 stream、发送 capture sentinel、限时 join worker，最后关闭 overlay UI thread。
 
 ## 浮窗与注入边界
 
-`LiquidGlassOverlay` 使用独立 Win32 UI thread、约 60 Hz 的 `WM_TIMER` 与 per-pixel-alpha layered window；Win32 timer tick 在 UI thread 忙碌时会合并，不会像独立 producer 的 `PostMessageW` 那样积累过期帧。窗口保持 topmost、click-through、no-activate，不夺取输入焦点。partial 只更新目标文本，timer 约每 45ms 显示一个新字符；ASR 修订时只回退到公共前缀，finalizing 则立即显示完整 final。auto theme 读取 Windows `AppsUseLightTheme`。文字保持单行、最大 440 DIP，溢出时保留尾部。
+`LiquidGlassOverlay` 使用独立 Win32 UI thread、约 60 Hz 的 `WM_TIMER` 与 per-pixel-alpha layered window；Win32 timer tick 在 UI thread 忙碌时会合并，不会像独立 producer 的 `PostMessageW` 那样积累过期帧。窗口保持 topmost、click-through、no-activate，不夺取输入焦点。partial 只更新目标文本，timer 约每 45ms 显示一个新字符；ASR 修订时只回退到公共前缀，finalizing 则立即显示完整 final。auto theme 读取 Windows `AppsUseLightTheme`。文字保持单行、最大 440 DIP，溢出时以二分查找定位可见尾部，避免长文本每帧逐字符测宽。
 
 preview 从不编辑目标应用。consumer 取得 punctuated final 后验证并恢复录音开始时保存的 HWND，只有恢复成功才调用 `inject.paste_text` 或 `inject.type_unicode`；目标无效时 dismiss 并放弃注入。
 
