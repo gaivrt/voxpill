@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.0.2"
+  #define AppVersion "1.0.3"
 #endif
 #ifndef BundleDir
   #define BundleDir "..\dist\VoxPill"
@@ -40,7 +40,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "startup"; Description: "登录 Windows 时自动启动 VoxPill"; GroupDescription: "启动选项："; Flags: checkedonce
 
 [Files]
-Source: "{#BundleDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#BundleDir}\*"; DestDir: "{app}"; Excludes: "config.toml"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#BundleDir}\config.toml"; DestDir: "{app}"; Flags: onlyifdoesntexist
 
 [InstallDelete]
 Type: files; Name: "{userstartup}\VoxPill.lnk"

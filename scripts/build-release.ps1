@@ -34,7 +34,7 @@ if ($LASTEXITCODE -ne 0) { throw "Icon generation failed" }
 
 $StagingRoot = Join-Path $ProjectRoot "build\release-dist"
 $WorkRoot = Join-Path $ProjectRoot "build\pyinstaller"
-& $Uv run pyinstaller --noconfirm --clean --distpath $StagingRoot --workpath $WorkRoot voicekey.spec
+& $Uv run python -m PyInstaller --noconfirm --clean --distpath $StagingRoot --workpath $WorkRoot voicekey.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 
 $BundleDir = Join-Path $StagingRoot "VoxPill"

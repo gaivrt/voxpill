@@ -9,7 +9,8 @@ VoxPill 是一个面向 Windows 的 CPU-only 离线全局语音输入工具：�
 | 路径 | 角色 |
 |------|------|
 | `main.py` | 应用入口；管理单实例、配置、热键轮询、录音、目标 HWND、static Paraformer preview/final、注入、worker 与进程生命周期 |
-| `hotkey.py` | 对 push-to-talk 物理键态做稳定窗口与 mouse guard，过滤连续点击产生的短伪脉冲 |
+| `hotkey.py` | 单键/组合键解析、录入状态、配置保存及物理键态稳定窗口与 mouse guard |
+| `hotkey_dialog.py` | 托盘打开的快捷键录入窗口；临时键盘 hook、重新录入、恢复默认与保存 |
 | `asr.py` | 启动时加载唯一的 static Paraformer + CT-Transformer pipeline，提供有界 PCM、final 优先 gate 与累积音频伪流式调度 |
 | `overlay.py` | 以独立 Win32 UI thread 和 60 Hz ticker 在当前显示器底部中央显示 no-activate、per-pixel alpha 的自动明暗 pill |
 | `inject.py` | 通过剪贴板或 Win32 `SendInput` 向焦点窗口注入文本 |

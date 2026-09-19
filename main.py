@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 import itertools
 import math
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -33,7 +34,8 @@ from pathlib import Path
 import sounddevice as sd
 
 import inject
-from hotkey import HotkeyGate
+from hotkey import HotkeyGate, HotkeySelection, parse_hotkey, hotkey_label, save_hotkey
+from hotkey_dialog import show_hotkey_dialog
 from asr import (
     BoundedPcmBuffer,
     OfflineAsr,
@@ -100,7 +102,13 @@ user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
 user32.SetForegroundWindow.restype = wintypes.BOOL
 
 # Prevent startup shortcut + manual launch from loading two model copies.
-_instance_mutex = kernel32.CreateMutexW(None, False, "Local\\GAIVR.VoxPill")
+_smoke_run = sys.argv[1:] in (["--smoke-acoustic-gate"], ["--smoke-hotkey-settings"])
+_settings_run = len(sys.argv) == 3 and sys.argv[1] == "--configure-hotkey"
+_instance_mutex = kernel32.CreateMutexW(
+    None, False, "Local\\GAIVR.VoxPill" + (
+        ".smoke" if _smoke_run else ".settings" if _settings_run else ""
+    )
+)
 if not _instance_mutex:
     raise ctypes.WinError(ctypes.get_last_error())
 if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
@@ -108,14 +116,6 @@ if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
 
 # 按键名 → Windows Virtual-Key Code。按住该键录音，松开转写。
 # 0xA2/0xA3 区分左右 Ctrl；0x11 是任意 Ctrl。
-VK = {
-    "ctrl_r": 0xA3, "ctrl_l": 0xA2, "ctrl": 0x11,
-    "alt_r": 0xA5, "alt_l": 0xA4, "alt": 0x12,
-    "shift_r": 0xA1, "shift_l": 0xA0, "shift": 0x10,
-    "`": 0xC0, "grave": 0xC0,
-    "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73, "f5": 0x74, "f6": 0x75,
-    "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
-}
 POLL_S = 0.02   # 物理键态轮询间隔（s）；20ms 的按下→录音延迟无感
 VK_LBUTTON = 0x01
 HOTKEY_STABLE_S = 0.06
@@ -200,10 +200,13 @@ def main():
     max_pcm_bytes = int(SR * 2 * recognition_cfg.max_audio_seconds)
 
     key_name = str(hk.get("key", "ctrl_r")).lower()
-    hotkey_vk = VK.get(key_name)
-    if hotkey_vk is None:
+    try:
+        hotkey_codes = parse_hotkey(key_name)
+    except ValueError:
         say(f"[config] 不认识的 key='{key_name}'，回退到 ctrl_r")
-        key_name, hotkey_vk = "ctrl_r", VK["ctrl_r"]
+        key_name, hotkey_codes = "ctrl_r", parse_hotkey("ctrl_r")
+    selection = HotkeySelection(key_name)
+    hotkey_changes = queue.SimpleQueue()
     auto_enter = bool(bh.get("auto_enter", False))
     restore_clipboard = bool(bh.get("restore_clipboard", False))
     min_bytes = int(SR * 2 * float(bh.get("min_seconds", 0.3)))
@@ -225,6 +228,7 @@ def main():
     }
     stop_flag = threading.Event()
     cleanup_started = threading.Event()
+    settings_open = threading.Event()
     session_ids = itertools.count(1)
     workers: set[threading.Thread] = set()
     workers_lock = threading.Lock()
@@ -359,16 +363,32 @@ def main():
         return job
 
     def poll_loop():
+        nonlocal hotkey_codes
         # 直接读物理键态：松开就一定停，免疫丢失的 keyup（stuck-key）。
         gate = HotkeyGate(HOTKEY_STABLE_S, MOUSE_GUARD_S)
         next_theme_check = 0.0
+        wait_for_release = False
         while not stop_flag.is_set():
             checked_at = time.perf_counter()
             if checked_at >= next_theme_check:
                 set_icon()
                 next_theme_check = checked_at + 1.0
+            while not hotkey_changes.empty():
+                selection.pending = hotkey_changes.get()
+            if selection.apply_pending(gate.recording, key_down):
+                hotkey_codes = parse_hotkey(selection.key)
+                gate.candidate_since = None
+                say(f"[hotkey] 已切换为 {selection.key}")
+                if st["icon"] is not None:
+                    st["icon"].update_menu()
             left = key_down(VK_LBUTTON)
-            now = key_down(hotkey_vk)
+            if settings_open.is_set():
+                wait_for_release = True
+            elif wait_for_release and not any(key_down(vk) for vk in range(8, 255)):
+                wait_for_release = False
+            now = all(key_down(vk) for vk in hotkey_codes)
+            if wait_for_release and not gate.recording:
+                now = False
             action = gate.update(checked_at, now, left)
             if action == "start":
                 try:
@@ -437,7 +457,7 @@ def main():
                 if text:
                     # 推理较慢时，用户可能已经按住热键开始下一句。等这次录音
                     # 松开后再注入，避免上一句在讲话过程中突然插入当前窗口。
-                    while key_down(hotkey_vk) and not stop_flag.wait(POLL_S):
+                    while (settings_open.is_set() or any(key_down(vk) for vk in hotkey_codes)) and not stop_flag.wait(POLL_S):
                         pass
                     if stop_flag.is_set():
                         glass.dismiss(job.session_id)
@@ -501,9 +521,44 @@ def main():
             cleanup()
             icon.stop()
 
+        def open_hotkey_settings(icon, item):
+            if settings_open.is_set():
+                return
+            settings_open.set()
+
+            def run_settings():
+                try:
+                    command = [sys.executable]
+                    if not getattr(sys, "frozen", False):
+                        command.append(str(Path(__file__).resolve()))
+                    command.extend(["--configure-hotkey", selection.key])
+                    # Tk owns the child process main thread; its interpreter
+                    # must never be garbage-collected by an audio/poll worker.
+                    with subprocess.Popen(command, creationflags=subprocess.CREATE_NO_WINDOW) as child:
+                        while child.poll() is None:
+                            if stop_flag.wait(0.1):
+                                child.terminate()
+                                child.wait()
+                                return
+                        if child.returncode == 0:
+                            name = load_config().get("hotkey", {}).get("key", "ctrl_r")
+                            parse_hotkey(name)
+                            hotkey_changes.put(name)
+                        elif child.returncode != 2:
+                            raise RuntimeError(f"设置窗口退出码 {child.returncode}")
+                except Exception as exc:
+                    say(f"[settings] 无法打开快捷键设置：{exc}")
+                    user32.MessageBoxW(None, f"无法打开快捷键设置：{exc}", "VoxPill", 0x10)
+                finally:
+                    settings_open.clear()
+
+            launch_worker(run_settings, name="voxpill-hotkey-settings")
+
         title = tray.TOOLTIP
         menu = pystray.Menu(
             pystray.MenuItem(title, None, enabled=False),
+            pystray.MenuItem(lambda item: f"当前快捷键：{hotkey_label(selection.key)}", None, enabled=False),
+            pystray.MenuItem("设置快捷键…", open_hotkey_settings),
             pystray.MenuItem("退出", on_quit),
         )
         initial_dark = tray.system_prefers_dark()
@@ -527,6 +582,19 @@ def main():
 
 
 if __name__ == "__main__":
+    if _settings_run:
+        saved = []
+
+        def save_dialog_key(name):
+            save_hotkey(APP_DIR / "config.toml", name)
+            saved.append(name)
+
+        show_hotkey_dialog(sys.argv[2], save_dialog_key, threading.Event())
+        raise SystemExit(0 if saved else 2)
+    if sys.argv[1:] == ["--smoke-hotkey-settings"]:
+        saved = []
+        show_hotkey_dialog("ctrl_r", saved.append, threading.Event(), smoke=True)
+        raise SystemExit(0 if saved == ["ctrl_r"] else 1)
     if sys.argv[1:] == ["--smoke-acoustic-gate"]:
         raise SystemExit(0 if packaged_activity_smoke() else 1)
     main()

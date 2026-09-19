@@ -1,8 +1,8 @@
 # VoxPill 配置 — 改完保存即可，下次启动生效。
 
 [hotkey]
-# 按住哪个键录音、松开转写（push-to-talk，单键）。
-key = "ctrl_r"      # 右 Ctrl。也支持 ctrl_l / alt_r / alt_l / shift_r / ` / f1..f12
+# 按住按键或组合键录音，松开其中任意一键后转写（push-to-talk）。
+key = "ctrl_r"      # 默认右 Ctrl；可在托盘录入单键或组合键，例如 ctrl_l+shift_l+space
 
 [overlay]
 # auto 跟随 Windows 应用主题；也可强制 light 或 dark。

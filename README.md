@@ -89,7 +89,17 @@ modifier pulses emitted by some mouse drivers.
 
 ## Configuration
 
-Edit `config.toml`, then restart VoxPill:
+Right-click the VoxPill tray icon → **设置快捷键…**, press a key or combination,
+release all keys, then click **保存**. Use **重新录入** to try again or **恢复右 Ctrl**
+to restore the default. The selection is saved and takes effect without restarting,
+after any current recording ends and the keys are released. Recording is paused
+while settings are open. Windows-reserved security shortcuts cannot be captured;
+bindings may still trigger shortcuts in other apps during normal use.
+
+中文：右键托盘图标 → **设置快捷键…**，直接按下想绑定的键或组合键，全部松开后点击 **保存**。
+默认仍为右 Ctrl；支持重新录入、恢复默认和取消，设置会自动记住。
+
+For other settings, edit `config.toml`, then restart VoxPill:
 
 ```toml
 [hotkey]
@@ -142,9 +152,9 @@ Download the models, then run:
 
 The release build creates:
 
-- `dist\release\VoxPill-1.0.2-portable.zip` — unzip and launch
+- `dist\release\VoxPill-1.0.3-portable.zip` — unzip and launch
   `VoxPill.exe`; no Python or `uv` is required.
-- `dist\release\VoxPill-1.0.2-setup.exe` — per-user installer with a Start
+- `dist\release\VoxPill-1.0.3-setup.exe` — per-user installer with a Start
   Menu entry, Windows Search discovery, uninstall support, and an optional
   login-start shortcut (enabled by default).
 - `dist\release\SHA256SUMS.txt` — hashes for release verification.
