@@ -8,6 +8,7 @@ __pycache__/
 build/
 dist/
 *.log
+assets/voxpill.icns
 
 # Model weights and generated download receipts
 models/*

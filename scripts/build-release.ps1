@@ -13,7 +13,7 @@ if (-not $VersionMatch.Success) {
 }
 $Version = $VersionMatch.Groups[1].Value
 
-$Uv = Join-Path $env:USERPROFILE ".local\bin\uv.exe"
+$Uv = (Get-Command uv -ErrorAction Stop).Source
 if (-not (Test-Path -LiteralPath $Uv -PathType Leaf)) {
     throw "uv.exe not found at $Uv"
 }
@@ -28,7 +28,7 @@ foreach ($RequiredFile in @(
     }
 }
 
-$env:UV_PROJECT_ENVIRONMENT = ".venv-win"
+if (-not $env:UV_PROJECT_ENVIRONMENT) { $env:UV_PROJECT_ENVIRONMENT = ".venv-win" }
 & $Uv run python tools\generate_icon.py
 if ($LASTEXITCODE -ne 0) { throw "Icon generation failed" }
 
@@ -38,6 +38,14 @@ $WorkRoot = Join-Path $ProjectRoot "build\pyinstaller"
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 
 $BundleDir = Join-Path $StagingRoot "VoxPill"
+foreach ($Smoke in @("--smoke-acoustic-gate", "--smoke-hotkey-settings")) {
+    $Check = Start-Process -FilePath (Join-Path $BundleDir "VoxPill.exe") -ArgumentList $Smoke -WindowStyle Hidden -PassThru
+    if (-not $Check.WaitForExit(60000)) {
+        $Check.Kill()
+        throw "Packaged smoke test timed out: $Smoke"
+    }
+    if ($Check.ExitCode -ne 0) { throw "Packaged smoke test failed: $Smoke" }
+}
 $ReleaseDir = Join-Path $ProjectRoot "dist\release"
 New-Item -ItemType Directory -Path $ReleaseDir -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "README.md") -Destination $BundleDir -Force

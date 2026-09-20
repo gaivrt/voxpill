@@ -527,19 +527,24 @@ class LiquidGlassOverlay:
         self._ready.wait(timeout=2.0)
 
     def show(self, session_id: int) -> None:
-        self._commands.put(("show", session_id, ""))
+        if self._thread.is_alive():
+            self._commands.put(("show", session_id, ""))
 
     def partial(self, session_id: int, text: str) -> None:
-        self._commands.put(("partial", session_id, text))
+        if self._thread.is_alive():
+            self._commands.put(("partial", session_id, text))
 
     def finalizing(self, session_id: int, text: str = "") -> None:
-        self._commands.put(("finalizing", session_id, text))
+        if self._thread.is_alive():
+            self._commands.put(("finalizing", session_id, text))
 
     def committed(self, session_id: int, text: str) -> None:
-        self._commands.put(("committed", session_id, text))
+        if self._thread.is_alive():
+            self._commands.put(("committed", session_id, text))
 
     def dismiss(self, session_id: int) -> None:
-        self._commands.put(("dismiss", session_id, ""))
+        if self._thread.is_alive():
+            self._commands.put(("dismiss", session_id, ""))
 
     def close(self) -> None:
         self._commands.put(("close", -1, ""))

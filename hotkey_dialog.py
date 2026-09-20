@@ -1,6 +1,7 @@
 """Keyboard capture dialog. Its temporary hook prevents captured app shortcuts."""
 
 import ctypes
+import sys
 from ctypes import wintypes
 import queue
 import tkinter as tk
@@ -10,6 +11,8 @@ from hotkey import HotkeyCapture, hotkey_label
 
 
 def show_hotkey_dialog(current, save, stop_flag, *, smoke=False):
+    if sys.platform != "win32":
+        return show_portable_dialog(current, save, stop_flag, smoke=smoke)
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     callback_type = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
@@ -127,3 +130,40 @@ def show_hotkey_dialog(current, save, stop_flag, *, smoke=False):
             root.destroy()
         except tk.TclError:
             pass
+
+
+def show_portable_dialog(current, save, stop_flag, *, smoke=False):
+    """Edit portable key names without installing a global capture hook."""
+    from desktop_unix import validate_hotkey
+    root = tk.Tk()
+    root.title("VoxPill · 快捷键")
+    root.resizable(False, False)
+    frame = ttk.Frame(root, padding=24)
+    frame.pack()
+    ttk.Label(frame, text="输入快捷键，例如 ctrl_r、f8、ctrl_l+shift_l+space").pack()
+    value = tk.StringVar(value=current)
+    ttk.Entry(frame, textvariable=value, width=40).pack(pady=12)
+
+    def commit():
+        try:
+            name = value.get().strip().lower()
+            validate_hotkey(name)
+            save(name)
+        except Exception as exc:
+            messagebox.showerror("无法保存快捷键", str(exc), parent=root)
+            return
+        root.destroy()
+
+    def tick():
+        if stop_flag.is_set():
+            root.destroy()
+        else:
+            root.after(100, tick)
+
+    ttk.Button(frame, text="保存", command=commit).pack(side="right")
+    ttk.Button(frame, text="取消", command=root.destroy).pack(side="left")
+    if smoke:
+        root.withdraw()
+        root.after(100, commit)
+    root.after(100, tick)
+    root.mainloop()

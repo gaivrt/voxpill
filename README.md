@@ -14,9 +14,9 @@
 
 **Speak. Release. Typed.**
 
-VoxPill is a lightweight, fully offline push-to-talk typing tool for Windows.
+VoxPill is a lightweight, fully offline push-to-talk typing tool for Windows, with macOS and Linux X11 preview support.
 Hold **Right Ctrl**, speak, then release the key to insert the final text into
-the window you started from. A compact native pill displays a pseudo-streaming
+the window you started from. On Windows, a compact native pill displays a pseudo-streaming
 preview without stealing focus.
 
 ## Highlights
@@ -36,6 +36,40 @@ preview without stealing focus.
 </p>
 
 ## Quick start
+
+### macOS / Linux preview (1.1.0)
+
+Download the matching archive from [GitHub Releases](https://github.com/gaivrt/voxpill/releases).
+macOS builds target Apple Silicon (macOS 14+) and Intel (macOS 15+); Linux builds target x86_64, glibc 2.35+ and X11.
+Move `VoxPill.app` to Applications on macOS, or extract the Linux archive and run
+`./VoxPill/VoxPill` in a terminal. Linux needs `libportaudio2`, `python3-tk` and
+`xclip` (`sudo apt install libportaudio2 python3-tk xclip` on Ubuntu).
+
+macOS requires Microphone and Accessibility permission for VoxPill (or the
+terminal when running from source); grant Input Monitoring if requested, then
+restart. The preview is unsigned/not notarized; approve first launch through
+Finder / Privacy & Security. Linux Wayland is currently unsupported.
+
+These platforms support recording and final insertion, with tray/menu-bar
+controls where available. The native transcript overlay remains Windows-only.
+Keep the original window focused until insertion finishes: on macOS/Linux a
+focus change cancels insertion. If the desktop has no supported tray menu,
+use terminal mode and Ctrl+C to quit. Edit the hotkey by name in settings
+(e.g. `ctrl_r`, `f8`, `ctrl_l+shift_l+space`); `win_l`/`win_r` mean Command on Mac.
+
+User config and `voxpill.log` live in `~/Library/Application Support/VoxPill`
+on macOS and `${XDG_CONFIG_HOME:-~/.config}/voxpill` on Linux.
+From source (Python 3.11+ with Tk installed):
+
+```sh
+uv sync
+uv run python bench/download_models.py --origin current_paraformer punctuation
+uv run python main.py
+# Build a native package on the target OS:
+uv run python scripts/build_release.py
+```
+
+### Windows
 
 Requirements: Windows 10/11 x64, Python 3.11+, a microphone, and
 [uv](https://docs.astral.sh/uv/getting-started/installation/).
@@ -152,9 +186,9 @@ Download the models, then run:
 
 The release build creates:
 
-- `dist\release\VoxPill-1.0.3-portable.zip` — unzip and launch
+- `dist\release\VoxPill-1.1.0-portable.zip` — unzip and launch
   `VoxPill.exe`; no Python or `uv` is required.
-- `dist\release\VoxPill-1.0.3-setup.exe` — per-user installer with a Start
+- `dist\release\VoxPill-1.1.0-setup.exe` — per-user installer with a Start
   Menu entry, Windows Search discovery, uninstall support, and an optional
   login-start shortcut (enabled by default).
 - `dist\release\SHA256SUMS.txt` — hashes for release verification.

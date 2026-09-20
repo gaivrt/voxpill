@@ -18,8 +18,6 @@ PC 麦克风 → static Paraformer accumulated-audio previews + final → 文本
 
     uv run python -u main.py
 """
-import ctypes
-from ctypes import wintypes
 from array import array
 from dataclasses import dataclass, field
 import itertools
@@ -47,11 +45,6 @@ from asr import (
 from process_qos import enable_high_qos
 from overlay import LiquidGlassOverlay
 
-APP_DIR = (
-    Path(sys.executable).resolve().parent
-    if getattr(sys, "frozen", False)
-    else Path(__file__).resolve().parent
-)
 
 
 def packaged_activity_smoke() -> bool:
@@ -85,34 +78,21 @@ except ModuleNotFoundError:               # Python < 3.11
 try:
     import pystray
     import tray
-    TRAY_OK = True
+    TRAY_OK = pystray.Icon.HAS_MENU
 except Exception:                         # 缺 pystray/pillow → 退化到 Ctrl+C 模式
     TRAY_OK = False
 
 if sys.stdout is not None:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-user32 = ctypes.WinDLL("user32", use_last_error=True)
-kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-user32.GetForegroundWindow.argtypes = ()
-user32.GetForegroundWindow.restype = wintypes.HWND
-user32.IsWindow.argtypes = (wintypes.HWND,)
-user32.IsWindow.restype = wintypes.BOOL
-user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
-user32.SetForegroundWindow.restype = wintypes.BOOL
+from app_paths import RESOURCE_DIR, CONFIG_PATH, DATA_DIR
 
-# Prevent startup shortcut + manual launch from loading two model copies.
-_smoke_run = sys.argv[1:] in (["--smoke-acoustic-gate"], ["--smoke-hotkey-settings"])
 _settings_run = len(sys.argv) == 3 and sys.argv[1] == "--configure-hotkey"
-_instance_mutex = kernel32.CreateMutexW(
-    None, False, "Local\\GAIVR.VoxPill" + (
-        ".smoke" if _smoke_run else ".settings" if _settings_run else ""
-    )
-)
-if not _instance_mutex:
-    raise ctypes.WinError(ctypes.get_last_error())
-if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
-    raise SystemExit(0)
+if sys.platform == "win32":
+    from desktop_windows import key_down, foreground_target, activate_target
+else:
+    from desktop_unix import key_down, foreground_target, activate_target
+    from desktop_unix import validate_hotkey as parse_hotkey
 
 # 按键名 → Windows Virtual-Key Code。按住该键录音，松开转写。
 # 0xA2/0xA3 区分左右 Ctrl；0x11 是任意 Ctrl。
@@ -127,7 +107,7 @@ _logfile = None
 @dataclass
 class DecodeJob:
     session_id: int
-    target_hwnd: int
+    target_hwnd: object
     pcm_buffer: BoundedPcmBuffer
     chunks: queue.SimpleQueue = field(default_factory=queue.SimpleQueue)
     capture_done: threading.Event = field(default_factory=threading.Event)
@@ -151,7 +131,7 @@ def say(*a):
 def load_config():
     if tomllib is None:
         return {}
-    path = APP_DIR / "config.toml"
+    path = CONFIG_PATH if CONFIG_PATH.exists() else RESOURCE_DIR / "config.toml"
     if not path.exists():
         return {}
     with open(path, "rb") as f:
@@ -167,29 +147,13 @@ def parse_device(d):
         return d
 
 
-def key_down(vk):
-    return bool(user32.GetAsyncKeyState(vk) & 0x8000)
-
-
-def activate_target(hwnd: int) -> bool:
-    """Restore the window focused when recording began before injecting final text."""
-    if not hwnd or not user32.IsWindow(hwnd):
-        return False
-    if user32.GetForegroundWindow() == hwnd:
-        return True
-    if not user32.SetForegroundWindow(hwnd):
-        return False
-    for _ in range(10):
-        if user32.GetForegroundWindow() == hwnd:
-            return True
-        time.sleep(0.01)
-    return False
-
-
 def main():
     global _logfile
+    if sys.platform != "win32":
+        from desktop_unix import check_desktop
+        check_desktop()
     try:    # 每次启动覆盖：日志只留本次运行，足够排查无框模式的问题
-        _logfile = open(APP_DIR / "voxpill.log", "w", encoding="utf-8")
+        _logfile = open(DATA_DIR / "voxpill.log", "w", encoding="utf-8")
     except Exception:
         _logfile = None
 
@@ -215,7 +179,7 @@ def main():
 
     enable_high_qos(say)
     glass = LiquidGlassOverlay(say, theme=str(ov.get("theme", "auto")).lower())
-    asr = OfflineAsr(APP_DIR, say)
+    asr = OfflineAsr(RESOURCE_DIR, say)
     say(f"\n就绪 — 按住 {key_name} 说话，松开提交。\n")
 
     work = queue.Queue()
@@ -251,6 +215,8 @@ def main():
         state_changed = active is not None and bool(active) != st["icon_active"]
         if active is not None:
             st["icon_active"] = bool(active)
+        if not TRAY_OK:
+            return
         dark = tray.system_prefers_dark()
         ic = st["icon"]
         if ic is not None and (force or state_changed or dark != st["icon_dark"]):
@@ -314,7 +280,7 @@ def main():
         session_id = next(session_ids)
         job = DecodeJob(
             session_id,
-            int(user32.GetForegroundWindow() or 0),
+            foreground_target(),
             BoundedPcmBuffer(max_pcm_bytes),
         )
         st["job"] = job
@@ -534,7 +500,7 @@ def main():
                     command.extend(["--configure-hotkey", selection.key])
                     # Tk owns the child process main thread; its interpreter
                     # must never be garbage-collected by an audio/poll worker.
-                    with subprocess.Popen(command, creationflags=subprocess.CREATE_NO_WINDOW) as child:
+                    with subprocess.Popen(command, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)) as child:
                         while child.poll() is None:
                             if stop_flag.wait(0.1):
                                 child.terminate()
@@ -548,7 +514,6 @@ def main():
                             raise RuntimeError(f"设置窗口退出码 {child.returncode}")
                 except Exception as exc:
                     say(f"[settings] 无法打开快捷键设置：{exc}")
-                    user32.MessageBoxW(None, f"无法打开快捷键设置：{exc}", "VoxPill", 0x10)
                 finally:
                     settings_open.clear()
 
@@ -583,10 +548,12 @@ def main():
 
 if __name__ == "__main__":
     if _settings_run:
+        from app_paths import initialize_config
+        initialize_config()
         saved = []
 
         def save_dialog_key(name):
-            save_hotkey(APP_DIR / "config.toml", name)
+            save_hotkey(CONFIG_PATH, name)
             saved.append(name)
 
         show_hotkey_dialog(sys.argv[2], save_dialog_key, threading.Event())
@@ -597,4 +564,7 @@ if __name__ == "__main__":
         raise SystemExit(0 if saved == ["ctrl_r"] else 1)
     if sys.argv[1:] == ["--smoke-acoustic-gate"]:
         raise SystemExit(0 if packaged_activity_smoke() else 1)
+    from app_paths import acquire_instance, initialize_config
+    initialize_config()
+    _instance_lock = acquire_instance()
     main()

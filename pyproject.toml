@@ -1,7 +1,7 @@
 [project]
 name = "voxpill"
-version = "1.0.3"
-description = "Offline bilingual push-to-talk typing for Windows"
+version = "1.1.0"
+description = "Offline bilingual push-to-talk typing for Windows, macOS and Linux X11"
 requires-python = ">=3.11"
 dependencies = [
     "numpy",
@@ -11,6 +11,10 @@ dependencies = [
     "sherpa-onnx-core==1.13.4",
     "sounddevice",
     "webrtcvad-wheels==2.0.14",
+    "pynput>=1.8.1,<2; sys_platform != 'win32'",
+    "pyobjc-framework-Quartz>=10; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa>=10; sys_platform == 'darwin'",
+    "python-xlib>=0.33; sys_platform == 'linux'",
 ]
 
 [dependency-groups]

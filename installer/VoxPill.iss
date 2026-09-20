@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.0.3"
+  #define AppVersion "1.1.0"
 #endif
 #ifndef BundleDir
   #define BundleDir "..\dist\VoxPill"

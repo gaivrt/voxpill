@@ -115,7 +115,7 @@ class StreamingRuntimeTest(unittest.TestCase):
         self.assertNotIn("create_streaming_session", main_source)
         self.assertNotIn("qwen", main_source.lower())
         self.assertNotIn("torch", main_source.lower())
-        self.assertIn("OfflineAsr(APP_DIR, say)", main_source)
+        self.assertIn("OfflineAsr(RESOURCE_DIR, say)", main_source)
         self.assertIn('priority="final"', main_source)
         self.assertIn("enable_high_qos(say)", main_source)
         self.assertNotIn("asr-streaming", packaging)
