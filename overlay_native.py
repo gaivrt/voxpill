@@ -177,6 +177,7 @@ class MacPanel:
         self.visible = False
         self.screen = A.NSScreen.mainScreen()
         self.recorded_frames = []
+        self.recorded_times = []
         self.recorded_geometry = []
         self.next_capture = 0
 
@@ -289,10 +290,13 @@ class MacPanel:
             self.recorded_geometry.append({"time": elapsed, "width": frame.size.width,
                                            "height": frame.size.height, "alpha": self.panel.alphaValue(), "status": state.status})
         self.recorded_frames.append(canvas.convert("RGB"))
+        self.recorded_times.append(elapsed)
 
     def save_recording(self, directory):
         import json
         if self.recorded_frames:
+            ticks = [round(t * 100) for t in self.recorded_times]
+            durations = [max(1, b-a)*10 for a, b in zip(ticks, ticks[1:])] + [40]
             self.recorded_frames[0].save(directory / "animation.gif", save_all=True,
-                append_images=self.recorded_frames[1:], duration=40, loop=0, disposal=2)
+                append_images=self.recorded_frames[1:], duration=durations, loop=0, disposal=2)
             (directory / "animation-timeline.json").write_text(json.dumps(self.recorded_geometry, indent=2))

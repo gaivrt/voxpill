@@ -33,3 +33,26 @@ Accessibility/Microphone permissions, an Applications bundle and per-user login
 agent. Windows HighQoS is Windows-specific; macOS does not expose that API.
 Developer ID signing/notarization requires an Apple identity and is not supplied
 by a passing build. Linux is outside this parity update.
+
+## Implemented and verification scope
+
+- Animation: Mac presents the existing Windows raster frames through NSImageView.
+  All 276 sampled frames match the published Windows motion reference for geometry,
+  text, phase and opacity. The previous Mac label/dot renderer was removed.
+- Native window checks: both themes, Unicode, long-text tail, stale sessions,
+  non-key/non-main panel, unchanged focused test window, empty mouse interception,
+  auto-exit and helper-process shutdown run on both native Mac architectures.
+- Shortcut UI: press/release capture, retry/default/cancel, native Mac labels and
+  saving are implemented; packaged UI smoke feeds a captured Right Control gesture.
+  Global physical event interception requires permissions and remains a manual check.
+- Original-target restoration: Accessibility window/control capture, raise,
+  activation, focus verification and invalid-target rejection are implemented and
+  exercised with API doubles. Third-party application behavior is not certified.
+- Login startup: per-user LaunchAgent creation/removal is checked in a temporary
+  directory; an actual logout/login cycle remains a manual check.
+- Shared audio/ASR behavior and packaged model loading/inference are tested;
+  an actual microphone session on a Mac remains a manual check.
+
+Native-window GIFs are captured from the rendered AppKit view, positioned using
+the real panel geometry and opacity, with recorded frame timing. They demonstrate
+the UI event-loop output; they are not a recording of a real microphone session.
