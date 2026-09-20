@@ -16,7 +16,7 @@
 
 VoxPill is a lightweight, fully offline push-to-talk typing tool for Windows, with macOS and Linux X11 preview support.
 Hold **Right Ctrl**, speak, then release the key to insert the final text into
-the window you started from. On Windows, a compact native pill displays a pseudo-streaming
+the window you started from. A compact floating pill displays a pseudo-streaming
 preview without stealing focus.
 
 ## Highlights
@@ -27,7 +27,7 @@ preview without stealing focus.
 - **One-model consistency** — preview and final use the same recognizer and punctuation model.
 - **Type anywhere** — chat boxes, documents, browsers, editors, and other Windows apps.
 - **Focus-safe commit** — the final text returns to the window active when recording began.
-- **Native 60 Hz overlay** — per-pixel alpha, no focus stealing, light/dark auto theme.
+- **Floating subtitles on every supported desktop** — no focus stealing, mouse click-through, light/dark themes. Windows retains its native per-pixel animated overlay.
 
 ## Demo
 
@@ -211,14 +211,16 @@ Right Ctrl gate
   → native no-activate overlay renders previews
   → key release stops preview scheduling and publication
   → the same Paraformer recognizes the full recording with final priority
-  → original target window is restored
+  → original target window is restored (Windows) or checked (macOS/Linux)
   → text is inserted once
 ```
 
 Audio callbacks only copy PCM. One priority gate serializes recognition; a
 waiting final passes any waiting preview, while a release/session lock prevents
 late preview text from appearing. The overlay owns a separate Win32 UI thread
-and 60 Hz ticker.
+and 60 Hz ticker on Windows. macOS and Linux use a native subtitle helper process
+so their GUI event loops stay on a main thread alongside the tray. A JSON pipe
+carries session-tagged updates; closing VoxPill also closes its subtitle helper.
 
 ## Development
 

@@ -42,7 +42,8 @@ class X11Panel:
             try:
                 result = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
                                         capture_output=True, text=True, timeout=1)
-                self.dark = "prefer-light" not in result.stdout
+                if result.returncode == 0:
+                    self.dark = "dark" in result.stdout
             except (OSError, subprocess.TimeoutExpired):
                 pass
         self.bg, self.fg = ("#101112", "#f5f3ed") if self.dark else ("#faf9f5", "#252525")
