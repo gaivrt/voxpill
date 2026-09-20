@@ -189,7 +189,8 @@ class MacPanel:
     def render(self, state):
         A = self.A
         if state.status == "hidden":
-            self.panel.orderOut_(None)
+            if self.visible:
+                self.panel.orderOut_(None)
             self.visible = False
             return
         if state.session != self.session:
@@ -220,11 +221,16 @@ class MacPanel:
         self.helper.callLater(ms / 1000, callback)
 
     def run(self):
-        self.helper.runEventLoop()
+        self.app.run()
 
     def close(self):
         self.panel.orderOut_(None)
-        self.helper.stopEventLoop()
+        # stopEventLoop terminates the process, hiding failed smoke assertions.
+        # Return from run() so Python can propagate errors and clean up pipes.
+        self.app.stop_(None)
+        event = self.A.NSEvent.otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
+            self.A.NSEventTypeApplicationDefined, (0, 0), 0, 0, 0, None, 0, 0, 0)
+        self.app.postEvent_atStart_(event, True)
 
     def prepare_focus_test(self):
         A = self.A

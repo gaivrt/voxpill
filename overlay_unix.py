@@ -88,19 +88,24 @@ class LiquidGlassOverlay:
             self._process.stdin.close()
 
     def show(self, session):
-        self._queue.put(("show", session, ""))
+        self._put(("show", session, ""))
 
     def partial(self, session, text):
-        self._queue.put(("partial", session, text))
+        self._put(("partial", session, text))
 
     def finalizing(self, session, text=""):
-        self._queue.put(("finalizing", session, text))
+        self._put(("finalizing", session, text))
 
     def committed(self, session, text):
-        self._queue.put(("committed", session, text))
+        self._put(("committed", session, text))
 
     def dismiss(self, session):
-        self._queue.put(("dismiss", session, ""))
+        self._put(("dismiss", session, ""))
+
+    def _put(self, event):
+        # A dead GUI helper must not accumulate messages or stop transcription.
+        if self._sender.is_alive():
+            self._queue.put(event)
 
     def close(self):
         self._queue.put(("close", -1, ""))
@@ -158,16 +163,21 @@ def run_worker(theme="auto", smoke_dir=None):
                 elif smoke_step == 2 and elapsed > 3.2:
                     panel.assert_focus_unchanged()
                     panel.snapshot(Path(smoke_dir) / "final.png")
-                    events.put(("committed", 1, state.text))
+                    events.put(("finalizing", 1, "这是一段很长的字幕，需要保留最新内容。" * 30 + "末尾文字 END"))
                     smoke_step = 3
-                elif smoke_step == 3 and elapsed > 4.4:
+                elif smoke_step == 3 and elapsed > 3.6:
+                    panel.assert_focus_unchanged()
+                    panel.snapshot(Path(smoke_dir) / "long.png")
+                    events.put(("committed", 1, "最终字幕：你好，世界。Hello, world!"))
+                    smoke_step = 4
+                elif smoke_step == 4 and elapsed > 4.8:
                     assert state.status == "hidden", "Subtitle did not retire"
                     panel.assert_focus_unchanged()
                     events.put(("show", 2, ""))
                     events.put(("partial", 1, "stale subtitle"))
                     events.put(("dismiss", 2, ""))
-                    smoke_step = 4
-                elif smoke_step == 4 and elapsed > 4.8:
+                    smoke_step = 5
+                elif smoke_step == 5 and elapsed > 5.2:
                     assert state.status == "hidden"
                     panel.close()
                     return

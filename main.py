@@ -35,7 +35,7 @@ if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] in {"--overlay-w
         client.close()
         assert client._process.returncode == 0
     elif sys.argv[1] == "--smoke-overlay":
-        run_worker("dark", sys.argv[2])
+        run_worker(sys.argv[3] if len(sys.argv) > 3 else "dark", sys.argv[2])
     else:
         run_worker(sys.argv[2])
     raise SystemExit(0)
