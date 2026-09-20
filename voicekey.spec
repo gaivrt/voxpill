@@ -71,7 +71,7 @@ if sys.platform == 'darwin':
         icon=str(project_root / 'assets' / 'voxpill.icns'),
         bundle_identifier='io.github.gaivrt.voxpill',
         info_plist={
-            'CFBundleShortVersionString': '1.2.0',
+            'CFBundleShortVersionString': '1.2.1',
             'NSMicrophoneUsageDescription': 'VoxPill transcribes your voice locally while you hold the recording hotkey.',
             'LSUIElement': True,
         },

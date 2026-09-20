@@ -1,6 +1,6 @@
 [project]
 name = "voxpill"
-version = "1.2.0"
+version = "1.2.1"
 description = "Offline bilingual push-to-talk typing for Windows, macOS and Linux X11"
 requires-python = ">=3.11"
 dependencies = [

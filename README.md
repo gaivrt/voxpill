@@ -37,7 +37,7 @@ preview without stealing focus.
 
 ## Quick start
 
-### macOS / Linux preview (1.2.0)
+### macOS / Linux preview (1.2.1)
 
 Download the matching archive from [GitHub Releases](https://github.com/gaivrt/voxpill/releases).
 macOS builds target Apple Silicon (macOS 14+) and Intel (macOS 15+); Linux builds target x86_64, glibc 2.35+ and X11.
@@ -198,9 +198,9 @@ Download the models, then run:
 
 The release build creates:
 
-- `dist\release\VoxPill-1.2.0-portable.zip` — unzip and launch
+- `dist\release\VoxPill-1.2.1-portable.zip` — unzip and launch
   `VoxPill.exe`; no Python or `uv` is required.
-- `dist\release\VoxPill-1.2.0-setup.exe` — per-user installer with a Start
+- `dist\release\VoxPill-1.2.1-setup.exe` — per-user installer with a Start
   Menu entry, Windows Search discovery, uninstall support, and an optional
   login-start shortcut (enabled by default).
 - `dist\release\SHA256SUMS.txt` — hashes for release verification.

@@ -178,6 +178,7 @@ def run_worker(theme="auto", smoke_dir=None):
     start = time.monotonic()
     next_frame = start
     smoke_step = 0
+    smoke_changed = start
     if smoke_dir:
         Path(smoke_dir).mkdir(parents=True, exist_ok=True)
         panel.prepare_focus_test()
@@ -192,46 +193,49 @@ def run_worker(theme="auto", smoke_dir=None):
     print("READY", flush=True)
 
     def tick():
-        nonlocal smoke_step, next_frame
+        nonlocal smoke_step, smoke_changed, next_frame
         try:
             now = time.monotonic()
             if smoke_dir:
-                elapsed = now - start
+                elapsed = now - smoke_changed
+                previous_step = smoke_step
                 if smoke_step == 0:
                     events.put(("show", 1, ""))
                     smoke_step = 10
                 elif smoke_step == 10 and elapsed > 0.7:
                     events.put(("partial", 1, "你好，VoxPill 正在显示实时字幕。Speak, release, typed."))
                     smoke_step = 1
-                elif smoke_step == 1 and elapsed > 2.8:
+                elif smoke_step == 1 and elapsed > 2.1:
                     panel.assert_focus_unchanged()
                     assert state.text, "No partial subtitle rendered"
                     panel.snapshot(Path(smoke_dir) / "partial.png")
                     events.put(("finalizing", 1, "最终字幕：你好，世界。Hello, world!"))
                     smoke_step = 2
-                elif smoke_step == 2 and elapsed > 3.2:
+                elif smoke_step == 2 and elapsed > 0.4:
                     panel.assert_focus_unchanged()
                     panel.snapshot(Path(smoke_dir) / "final.png")
                     events.put(("finalizing", 1, "这是一段很长的字幕，需要保留最新内容。" * 30 + "末尾文字 END"))
                     smoke_step = 3
-                elif smoke_step == 3 and elapsed > 3.6:
+                elif smoke_step == 3 and elapsed > 0.4:
                     panel.assert_focus_unchanged()
                     panel.snapshot(Path(smoke_dir) / "long.png")
                     events.put(("committed", 1, "最终字幕：你好，世界。Hello, world!"))
                     smoke_step = 4
-                elif smoke_step == 4 and elapsed > 4.8:
+                elif smoke_step == 4 and elapsed > 1.2:
                     assert state.status == "hidden", "Subtitle did not retire"
                     panel.assert_focus_unchanged()
                     events.put(("show", 2, ""))
                     events.put(("partial", 1, "stale subtitle"))
                     events.put(("dismiss", 2, ""))
                     smoke_step = 5
-                elif smoke_step == 5 and elapsed > 5.2:
+                elif smoke_step == 5 and elapsed > 0.5:
                     assert state.status == "hidden"
                     if sys.platform == "darwin":
                         panel.save_recording(Path(smoke_dir))
                     panel.close()
                     return
+                if smoke_step != previous_step:
+                    smoke_changed = now
             while not events.empty():
                 command, session, text = events.get()
                 if command == "close":
