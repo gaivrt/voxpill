@@ -37,7 +37,7 @@ preview without stealing focus.
 
 ## Quick start
 
-### macOS / Linux preview (1.1.1)
+### macOS / Linux preview (1.2.0)
 
 Download the matching archive from [GitHub Releases](https://github.com/gaivrt/voxpill/releases).
 macOS builds target Apple Silicon (macOS 14+) and Intel (macOS 15+); Linux builds target x86_64, glibc 2.35+ and X11.
@@ -55,10 +55,19 @@ with tray/menu-bar controls where available. Subtitles show recording/recognitio
 status, reveal previews character by character, display the final text and then
 retire automatically. They do not take keyboard focus or intercept mouse clicks.
 Install a CJK font on Linux if needed (`sudo apt install fonts-noto-cjk` on Ubuntu).
-Keep the original window focused until insertion finishes: on macOS/Linux a
-focus change cancels insertion. If the desktop has no supported tray menu,
-use terminal mode and Ctrl+C to quit. Edit the hotkey by name in settings
-(e.g. `ctrl_r`, `f8`, `ctrl_l+shift_l+space`); `win_l`/`win_r` mean Command on Mac.
+macOS restores the original input window and field before inserting the final
+text, and refuses insertion if that target is no longer valid. On Linux, keep
+the original window focused until insertion finishes. If the desktop has no supported tray menu,
+use terminal mode and Ctrl+C to quit. On Mac, record a hotkey by pressing and
+releasing it in settings, with re-record, default and cancel controls; Linux
+still accepts names (e.g. `ctrl_r`, `f8`, `ctrl_l+shift_l+space`). Mac key labels
+use Control, Option and Command. The Mac menu also offers **登录时启动** (start at login).
+Disable that option before removing the app; user settings remain in Application Support.
+
+macOS now shares the Windows pill renderer and animation: the small four-bar
+orb, spring expansion, per-character revisions, faster recognition waveform and
+shrink/fade exit. See the [Windows-to-Mac acceptance checklist](docs/windows-mac-parity.md)
+for the full behavior inventory and verification boundaries.
 
 User config and `voxpill.log` live in `~/Library/Application Support/VoxPill`
 on macOS and `${XDG_CONFIG_HOME:-~/.config}/voxpill` on Linux.
@@ -189,9 +198,9 @@ Download the models, then run:
 
 The release build creates:
 
-- `dist\release\VoxPill-1.1.1-portable.zip` — unzip and launch
+- `dist\release\VoxPill-1.2.0-portable.zip` — unzip and launch
   `VoxPill.exe`; no Python or `uv` is required.
-- `dist\release\VoxPill-1.1.1-setup.exe` — per-user installer with a Start
+- `dist\release\VoxPill-1.2.0-setup.exe` — per-user installer with a Start
   Menu entry, Windows Search discovery, uninstall support, and an optional
   login-start shortcut (enabled by default).
 - `dist\release\SHA256SUMS.txt` — hashes for release verification.

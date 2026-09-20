@@ -496,6 +496,15 @@ class LiquidGlassOverlay:
     """Native Win32 overlay whose public API never blocks ASR threads."""
 
     def __init__(self, say=print, theme: str = "auto"):
+        self._init_visual_state(say, theme)
+        self._ready = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, name="voxpill-overlay", daemon=True
+        )
+        self._thread.start()
+        self._ready.wait(timeout=2.0)
+
+    def _init_visual_state(self, say=print, theme="auto"):
         self._say = say
         self._theme = theme if theme in {"auto", "light", "dark"} else "auto"
         self._dark_surface = True
@@ -519,12 +528,6 @@ class LiquidGlassOverlay:
         self._base_cache_image = None
         self._surface = None
         self._hwnd: int | None = None
-        self._ready = threading.Event()
-        self._thread = threading.Thread(
-            target=self._run, name="voxpill-overlay", daemon=True
-        )
-        self._thread.start()
-        self._ready.wait(timeout=2.0)
 
     def show(self, session_id: int) -> None:
         if self._thread.is_alive():
@@ -646,10 +649,19 @@ class LiquidGlassOverlay:
         if self._drain(hwnd, user32):
             user32.DestroyWindow(hwnd)
             return
+        result = self._advance_frame(time.perf_counter(), lambda layout: self._target_geometry(user32, layout))
+        if result is None:
+            if self._state["phase"] == "hidden":
+                user32.ShowWindow(hwnd, 0)
+            return
+        frame, x, y, alpha = result
+        self._present(hwnd, user32, gdi32, frame, x, y, alpha)
+
+    def _advance_frame(self, now, target_geometry):
+        """Shared Windows/macOS animation and raster renderer; no native calls."""
         phase = self._state["phase"]
         if phase == "hidden":
             return
-        now = time.perf_counter()
         if (
             self._state["status"] == "listening"
             and self._state["text"] != self._state["target_text"]
@@ -660,7 +672,7 @@ class LiquidGlassOverlay:
             )
             self._state["next_character_at"] = now + CHAR_REVEAL_SECONDS
         elapsed = now - self._state["phase_started"]
-        targets = self._target_geometry(user32, self._state["max_layout"])
+        targets = target_geometry(self._state["max_layout"])
         if phase == "showing":
             progress = ease_out_quint(elapsed / 0.26)
             alpha = int(lerp(0, 255, progress))
@@ -668,11 +680,10 @@ class LiquidGlassOverlay:
                 self._state["phase"] = "visible"
         elif phase == "exiting":
             progress = ease_in_out_cubic(elapsed / 0.34)
-            targets = self._target_geometry(user32, OverlayLayout(14, 14, 0))
+            targets = target_geometry(OverlayLayout(14, 14, 0))
             fade = ease_out_quint(clamp01((elapsed - 0.10) / 0.24))
             alpha = int(lerp(255, 0, fade))
             if progress >= 1:
-                user32.ShowWindow(hwnd, 0)
                 self._state.update(
                     active_id=None,
                     phase="hidden",
@@ -698,7 +709,7 @@ class LiquidGlassOverlay:
         if phase == "exiting":
             reveal *= 1.0 - ease_out_quint(elapsed / 0.12)
         frame = self._render_frame(width, height, x, y, now, reveal)
-        self._present(hwnd, user32, gdi32, frame, x, y, alpha)
+        return frame, x, y, alpha
 
     def _load_font(self, pixels: int):
         from PIL import ImageFont
@@ -709,6 +720,8 @@ class LiquidGlassOverlay:
             "C:/Windows/Fonts/msyh.ttc",
             "C:/Windows/Fonts/segoeui.ttf",
             "C:/Windows/Fonts/arial.ttf",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
         ):
             try:
                 font = ImageFont.truetype(path, pixels)

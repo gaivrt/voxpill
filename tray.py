@@ -1,6 +1,7 @@
 """Minimal adaptive VoxPill system-tray artwork."""
 
 import os
+import sys
 
 from PIL import Image, ImageDraw
 
@@ -22,6 +23,9 @@ def dark_from_apps_use_light_theme(value: int) -> bool:
 
 def system_prefers_dark() -> bool:
     """Read the current Windows app theme, defaulting to dark when unavailable."""
+    if sys.platform == "darwin":
+        from Foundation import NSUserDefaults
+        return NSUserDefaults.standardUserDefaults().stringForKey_("AppleInterfaceStyle") == "Dark"
     if os.name != "nt":
         return True
     try:

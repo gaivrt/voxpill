@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import re
+import sys
 import tempfile
 import tomllib
 
@@ -68,7 +69,12 @@ def encode_hotkey(codes) -> str:
 
 
 def hotkey_label(key: str) -> str:
-    return " + ".join(KEY_LABELS.get(part, part.upper()) for part in key.split("+"))
+    labels = KEY_LABELS
+    if sys.platform == "darwin":
+        labels = {**labels, "win_l": "左 Command", "win_r": "右 Command",
+                  "alt_l": "左 Option", "alt_r": "右 Option", "alt": "任一 Option",
+                  "ctrl_l": "左 Control", "ctrl_r": "右 Control", "ctrl": "任一 Control"}
+    return " + ".join(labels.get(part, part.upper()) for part in key.split("+"))
 
 
 class HotkeyCapture:

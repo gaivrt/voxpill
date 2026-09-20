@@ -546,10 +546,24 @@ def main():
             launch_worker(run_settings, name="voxpill-hotkey-settings")
 
         title = tray.TOOLTIP
+        login_items = []
+        if sys.platform == "darwin":
+            from mac_desktop import login_enabled, set_login_enabled
+
+            def toggle_login(icon, item):
+                try:
+                    set_login_enabled(not login_enabled())
+                    icon.update_menu()
+                except Exception as exc:
+                    say(f"[startup] {exc}")
+                    icon.notify(str(exc), "VoxPill")
+
+            login_items.append(pystray.MenuItem("登录时启动", toggle_login, checked=lambda item: login_enabled()))
         menu = pystray.Menu(
             pystray.MenuItem(title, None, enabled=False),
             pystray.MenuItem(lambda item: f"当前快捷键：{hotkey_label(selection.key)}", None, enabled=False),
             pystray.MenuItem("设置快捷键…", open_hotkey_settings),
+            *login_items,
             pystray.MenuItem("退出", on_quit),
         )
         initial_dark = tray.system_prefers_dark()

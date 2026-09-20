@@ -11,6 +11,9 @@ from hotkey import HotkeyCapture, hotkey_label
 
 
 def show_hotkey_dialog(current, save, stop_flag, *, smoke=False):
+    if sys.platform == "darwin":
+        from mac_hotkey import show_dialog
+        return show_dialog(current, save, stop_flag, smoke=smoke)
     if sys.platform != "win32":
         return show_portable_dialog(current, save, stop_flag, smoke=smoke)
     user32 = ctypes.WinDLL("user32", use_last_error=True)

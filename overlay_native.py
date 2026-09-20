@@ -166,28 +166,32 @@ class MacPanel:
         self.panel.setLevel_(A.NSFloatingWindowLevel)
         self.panel.setOpaque_(False)
         self.panel.setBackgroundColor_(A.NSColor.clearColor())
-        self.panel.setHasShadow_(True)
+        self.panel.setHasShadow_(False)
         self.panel.setIgnoresMouseEvents_(True)
         self.panel.setHidesOnDeactivate_(False)
         self.panel.setCollectionBehavior_(A.NSWindowCollectionBehaviorCanJoinAllSpaces | A.NSWindowCollectionBehaviorFullScreenAuxiliary)
-        self.view = A.NSView.alloc().initWithFrame_(A.NSMakeRect(0, 0, 180, 48))
-        self.view.setWantsLayer_(True)
-        self.view.layer().setCornerRadius_(24)
+        self.view = A.NSImageView.alloc().initWithFrame_(A.NSMakeRect(0, 0, 36, 36))
+        self.view.setImageScaling_(A.NSImageScaleAxesIndependently)
         self.panel.setContentView_(self.view)
-        self.label = A.NSTextField.labelWithString_("")
-        self.label.setFont_(A.NSFont.systemFontOfSize_(15))
-        self.label.setLineBreakMode_(A.NSLineBreakByTruncatingHead)
-        self.label.setMaximumNumberOfLines_(1)
-        self.view.addSubview_(self.label)
-        self.dot = A.NSView.alloc().initWithFrame_(A.NSMakeRect(18, 20, 8, 8))
-        self.dot.setWantsLayer_(True)
-        self.dot.layer().setCornerRadius_(4)
-        self.view.addSubview_(self.dot)
-        self.theme, self.session, self.width = theme, None, 180
+        self.theme, self.session = theme, None
         self.visible = False
         self.screen = A.NSScreen.mainScreen()
+        self.last_frame = None
+        self.recorded_frames = []
+        self.recorded_geometry = []
+        self.next_capture = 0
+
+    def _target_geometry(self, layout):
+        work = self.screen.visibleFrame()
+        scale = self.scale
+        width, height = layout.width * scale, layout.height * scale
+        top = self.screen.frame().origin.y + self.screen.frame().size.height
+        return ((work.origin.x + work.size.width / 2) * scale - width / 2,
+                (top - work.origin.y - 22) * scale - height, width, height)
 
     def render(self, state):
+        import io
+        from Foundation import NSData
         A = self.A
         if state.status == "hidden":
             if self.visible:
@@ -195,25 +199,38 @@ class MacPanel:
             self.visible = False
             return
         if state.session != self.session:
-            self.session, self.width = state.session, 180
-            point = A.NSEvent.mouseLocation()
+            self.session = state.session
+            # Prefer the active input window's monitor; fall back to pointer.
+            from mac_desktop import input_point
+            point = input_point() or A.NSEvent.mouseLocation()
             self.screen = next((s for s in A.NSScreen.screens() if A.NSPointInRect(point, s.frame())), A.NSScreen.mainScreen())
+            self.scale = float(self.screen.backingScaleFactor())
+            state._scale = self.scale
+            state._font = None
             appearance = self.app.effectiveAppearance().bestMatchFromAppearancesWithNames_([A.NSAppearanceNameAqua, A.NSAppearanceNameDarkAqua])
-            dark = self.theme == "dark" or (self.theme == "auto" and appearance == A.NSAppearanceNameDarkAqua)
-            bg = A.NSColor.colorWithWhite_alpha_(0.055 if dark else 0.98, 0.97)
-            fg = A.NSColor.colorWithWhite_alpha_(0.96 if dark else 0.12, 1)
-            self.view.layer().setBackgroundColor_(bg.CGColor())
-            self.label.setTextColor_(fg)
-            self.dot.layer().setBackgroundColor_(fg.CGColor())
-        text = caption(state)
-        self.label.setStringValue_(text)
-        work = self.screen.visibleFrame()
-        measured = self.label.attributedStringValue().size().width
-        self.width = min(max(self.width, measured + 64), min(600, work.size.width - 32))
-        width = self.width
-        self.panel.setFrame_display_(A.NSMakeRect(work.origin.x + (work.size.width-width)/2, work.origin.y+22, width, 48), True)
-        self.label.setFrame_(A.NSMakeRect(40, 13, width-56, 23))
-        self.dot.setAlphaValue_(0.65 + 0.35 * math.sin(time.monotonic()*7) if state.status == "listening" else 1)
+            state._dark_surface = self.theme == "dark" or (self.theme == "auto" and appearance == A.NSAppearanceNameDarkAqua)
+            from overlay import OverlayLayout
+            x, y, w, h = self._target_geometry(OverlayLayout(36, 36, 0))
+            state._state["geometry"] = [x, y - 6 * self.scale, w, h]
+            state._state["velocity"] = [0.0] * 4
+        result = state._advance_frame(time.monotonic(), self._target_geometry)
+        if result is None:
+            self.panel.orderOut_(None)
+            self.visible = False
+            return
+        frame, x, y, alpha = result
+        self.last_frame = frame
+        self.last_alpha = alpha
+        self.last_geometry = (x, y, frame.width, frame.height)
+        stream = io.BytesIO()
+        frame.save(stream, format="PNG", compress_level=1)
+        raw = stream.getvalue()
+        image = A.NSImage.alloc().initWithData_(NSData.dataWithBytes_length_(raw, len(raw)))
+        self.view.setImage_(image)
+        top = self.screen.frame().origin.y + self.screen.frame().size.height
+        self.panel.setFrame_display_(A.NSMakeRect(x/self.scale, top-(y+frame.height)/self.scale,
+                                                frame.width/self.scale, frame.height/self.scale), True)
+        self.panel.setAlphaValue_(alpha / 255)
         if not self.visible:
             self.panel.orderFrontRegardless()
             self.visible = True
@@ -251,3 +268,35 @@ class MacPanel:
         self.view.cacheDisplayInRect_toBitmapImageRep_(self.view.bounds(), rep)
         data = rep.representationUsingType_properties_(self.A.NSBitmapImageFileTypePNG, {})
         assert data.writeToFile_atomically_(str(path), True)
+
+    def record_frame(self, elapsed, state):
+        if elapsed < self.next_capture:
+            return
+        self.next_capture = elapsed + 1 / 30
+        import io
+        from PIL import Image
+        background = (35, 37, 40, 255) if self.theme == "dark" else (226, 228, 230, 255)
+        canvas = Image.new("RGBA", (960, 160), background)
+        if self.visible:
+            rep = self.view.bitmapImageRepForCachingDisplayInRect_(self.view.bounds())
+            self.view.cacheDisplayInRect_toBitmapImageRep_(self.view.bounds(), rep)
+            data = rep.representationUsingType_properties_(self.A.NSBitmapImageFileTypePNG, {})
+            image = Image.open(io.BytesIO(bytes(data))).convert("RGBA")
+            frame = self.panel.frame()
+            width, height = round(frame.size.width * 2), round(frame.size.height * 2)
+            image = image.resize((max(1, width), max(1, height)), Image.Resampling.LANCZOS)
+            image.putalpha(image.getchannel("A").point(lambda a: round(a*self.panel.alphaValue())))
+            work = self.screen.visibleFrame()
+            left = work.origin.x + work.size.width / 2 - 240
+            bottom = work.origin.y + 6
+            canvas.alpha_composite(image, (round((frame.origin.x-left)*2), round((bottom+80-frame.origin.y-frame.size.height)*2)))
+            self.recorded_geometry.append({"time": elapsed, "width": frame.size.width,
+                                           "height": frame.size.height, "alpha": self.panel.alphaValue(), "status": state.status})
+        self.recorded_frames.append(canvas.convert("RGB"))
+
+    def save_recording(self, directory):
+        import json
+        if self.recorded_frames:
+            self.recorded_frames[0].save(directory / "animation.gif", save_all=True,
+                append_images=self.recorded_frames[1:], duration=40, loop=0, disposal=2)
+            (directory / "animation-timeline.json").write_text(json.dumps(self.recorded_geometry, indent=2))

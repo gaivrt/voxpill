@@ -22,6 +22,11 @@ MAC_CODES.update(zip(map(ord, "ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
     (0,11,8,2,14,3,5,4,34,38,40,37,46,45,31,35,12,15,1,17,32,9,13,7,16,6)))
 MAC_CODES.update(zip(map(ord, "0123456789"), (29,18,19,20,21,23,22,26,28,25)))
 MAC_CODES.update(zip(range(0x70, 0x84), (122,120,99,118,96,97,98,100,101,109,103,111,105,107,113,106,64,79,80,90)))
+MAC_CODES.update({0xBA: 41, 0xBB: 24, 0xBC: 43, 0xBD: 27, 0xBE: 47,
+                  0xBF: 44, 0xDB: 33, 0xDC: 42, 0xDD: 30, 0xDE: 39,
+                  0x60: 82, 0x61: 83, 0x62: 84, 0x63: 85, 0x64: 86,
+                  0x65: 87, 0x66: 88, 0x67: 89, 0x68: 91, 0x69: 92,
+                  0x6A: 67, 0x6B: 69, 0x6D: 78, 0x6E: 65, 0x6F: 75})
 X_NAMES = {
     0xA2: "Control_L", 0xA3: "Control_R", 0xA0: "Shift_L", 0xA1: "Shift_R",
     0xA4: "Alt_L", 0xA5: "Alt_R", 0x5B: "Super_L", 0x5C: "Super_R",
@@ -84,22 +89,16 @@ def key_down(code):
 
 def foreground_target():
     if sys.platform == "darwin":
-        import AppKit
-        import Quartz
-        app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
-        if app is None:
-            return None
-        pid = app.processIdentifier()
-        windows = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
-        for window in windows:
-            if window.get(Quartz.kCGWindowOwnerPID) == pid and window.get(Quartz.kCGWindowLayer) == 0:
-                return (pid, window[Quartz.kCGWindowNumber])
-        return None
+        from mac_desktop import foreground_target as capture
+        return capture()
     focus = _display().get_input_focus().focus
     return getattr(focus, "id", None)
 
 
 def activate_target(target):
+    if sys.platform == "darwin":
+        from mac_desktop import activate_target as restore
+        return restore(target)
     # Never insert into a different window while a slow decode was running.
     return bool(target and foreground_target() == target)
 
@@ -132,8 +131,15 @@ def _clipboard_write(text):
 
 def paste_text(text, *, restore_clipboard=False):
     from pynput.keyboard import Key
-    old = _clipboard_read() if restore_clipboard else None
-    _clipboard_write(text)
+    try:
+        old = _clipboard_read() if restore_clipboard else None
+    except (OSError, subprocess.SubprocessError):
+        old = None
+    try:
+        _clipboard_write(text)
+    except (OSError, subprocess.SubprocessError):
+        type_unicode(text)
+        return
     keyboard = _keyboard()
     with keyboard.pressed(Key.cmd if sys.platform == "darwin" else Key.ctrl):
         keyboard.tap("v")
