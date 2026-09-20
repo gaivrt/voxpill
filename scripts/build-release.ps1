@@ -38,7 +38,7 @@ $WorkRoot = Join-Path $ProjectRoot "build\pyinstaller"
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 
 $BundleDir = Join-Path $StagingRoot "VoxPill"
-foreach ($Smoke in @("--smoke-acoustic-gate", "--smoke-hotkey-settings")) {
+foreach ($Smoke in @("--smoke-acoustic-gate", "--smoke-hotkey-settings", "--smoke-models", "--smoke-desktop")) {
     $Check = Start-Process -FilePath (Join-Path $BundleDir "VoxPill.exe") -ArgumentList $Smoke -WindowStyle Hidden -PassThru
     if (-not $Check.WaitForExit(60000)) {
         $Check.Kill()

@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 
-from hotkey import VK, parse_hotkey
+from hotkey import parse_hotkey
 
 # Apple hardware keycodes, independent of pynput's character event translation.
 MAC_CODES = {
@@ -56,8 +56,8 @@ def _display():
 
 def check_desktop():
     if sys.platform == "darwin":
-        import Quartz
-        if not Quartz.AXIsProcessTrusted():
+        import ApplicationServices
+        if not ApplicationServices.AXIsProcessTrusted():
             raise RuntimeError("Enable VoxPill (or your terminal) in System Settings > Privacy & Security > Accessibility, then restart.")
     else:
         _display()

@@ -23,6 +23,8 @@ def main():
     binary = staging / ("VoxPill.app/Contents/MacOS/VoxPill" if sys.platform == "darwin" else "VoxPill/VoxPill")
     subprocess.run([str(binary), "--smoke-acoustic-gate"], check=True, timeout=60)
     subprocess.run([str(binary), "--smoke-hotkey-settings"], check=True, timeout=60)
+    subprocess.run([str(binary), "--smoke-models"], check=True, timeout=120)
+    subprocess.run([str(binary), "--smoke-desktop"], check=True, timeout=60)
     output = ROOT / "dist/release"
     output.mkdir(parents=True, exist_ok=True)
     stem = f"VoxPill-{version}-{platform.system().lower()}-{platform.machine().lower()}"

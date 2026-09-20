@@ -10,6 +10,14 @@ import desktop_unix as desktop
 
 
 class DesktopPortabilityTest(unittest.TestCase):
+    def test_mac_permission_check_uses_application_services(self):
+        api = SimpleNamespace(AXIsProcessTrusted=lambda: False)
+        with patch.object(desktop.sys, "platform", "darwin"), patch.dict("sys.modules", ApplicationServices=api):
+            with self.assertRaisesRegex(RuntimeError, "Accessibility"):
+                desktop.check_desktop()
+            api.AXIsProcessTrusted = lambda: True
+            desktop.check_desktop()
+
     def test_mac_polls_right_control_and_generic_modifier(self):
         quartz = SimpleNamespace(kCGEventSourceStateCombinedSessionState=0,
                                  CGEventSourceKeyState=lambda source, key: key == 62)

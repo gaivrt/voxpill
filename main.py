@@ -297,11 +297,12 @@ def main():
                 args=(job,),
                 name=f"voxpill-capture-{session_id}",
             )
-            launch_worker(
-                preview_job,
-                args=(job,),
-                name=f"voxpill-preview-{session_id}",
-            )
+            if sys.platform == "win32":
+                launch_worker(
+                    preview_job,
+                    args=(job,),
+                    name=f"voxpill-preview-{session_id}",
+                )
             set_icon(True)
             say("● REC")
         except Exception:
@@ -547,6 +548,17 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--smoke-models"]:
+        recognizer = OfflineAsr(RESOURCE_DIR, say)
+        recognizer.recognize(bytes(SR * 2))
+        raise SystemExit(0)
+    if sys.argv[1:] == ["--smoke-desktop"]:
+        if sys.platform == "darwin":
+            import ApplicationServices
+            ApplicationServices.AXIsProcessTrusted()
+        key_down(0xA3)
+        foreground_target()
+        raise SystemExit(0)
     if _settings_run:
         from app_paths import initialize_config
         initialize_config()
@@ -567,4 +579,14 @@ if __name__ == "__main__":
     from app_paths import acquire_instance, initialize_config
     initialize_config()
     _instance_lock = acquire_instance()
-    main()
+    try:
+        main()
+    except Exception as exc:
+        say(f"[startup] {type(exc).__name__}: {exc}")
+        if sys.platform == "darwin":
+            import AppKit
+            alert = AppKit.NSAlert.alloc().init()
+            alert.setMessageText_("VoxPill could not start")
+            alert.setInformativeText_(str(exc))
+            alert.runModal()
+        raise
