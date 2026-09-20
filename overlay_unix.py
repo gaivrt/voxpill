@@ -1,0 +1,190 @@
+"""Non-activating native subtitles, isolated from the tray's GUI main thread."""
+from dataclasses import dataclass
+import json
+import os
+from pathlib import Path
+import queue
+import subprocess
+import sys
+import threading
+import time
+
+from overlay import display_text, reconcile_partial_text, reveal_next_character
+
+
+@dataclass
+class SubtitleState:
+    session: int | None = None
+    text: str = ""
+    target: str = ""
+    status: str = "hidden"
+    hide_at: float | None = None
+    next_character: float = 0
+
+    def apply(self, command, session, text, now):
+        if command == "show":
+            self.session, self.text, self.target = session, "", ""
+            self.status, self.hide_at, self.next_character = "listening", None, now
+        elif session == self.session:
+            if command == "partial" and self.status == "listening":
+                self.target = display_text(text)
+                self.text = reconcile_partial_text(self.text, self.target)
+            elif command == "finalizing":
+                self.status = "finalizing"
+                if text:
+                    self.text = self.target = display_text(text)
+            elif command == "committed":
+                self.text = self.target = display_text(text)
+                self.status, self.hide_at = "committed", now + 0.8
+            elif command == "dismiss":
+                self.status, self.hide_at = "dismiss", now + 0.15
+
+    def tick(self, now):
+        if self.hide_at is not None and now >= self.hide_at:
+            self.session, self.text, self.target = None, "", ""
+            self.status, self.hide_at = "hidden", None
+        elif self.status == "listening" and now >= self.next_character:
+            self.text = reveal_next_character(self.text, self.target)
+            self.next_character = now + 0.045
+
+
+class LiquidGlassOverlay:
+    """Small JSON pipe keeps AppKit/Tk on a separate process's main thread."""
+    def __init__(self, say=print, theme="auto"):
+        command = [sys.executable]
+        if not getattr(sys, "frozen", False):
+            command.append(str(Path(__file__).with_name("main.py")))
+        command += ["--overlay-worker", theme]
+        self._say = say
+        self._queue = queue.SimpleQueue()
+        self._process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                         text=True, encoding="utf-8", bufsize=1)
+        ready = threading.Event()
+        result = []
+
+        def read_ready():
+            result.append(self._process.stdout.readline().strip())
+            ready.set()
+
+        threading.Thread(target=read_ready, daemon=True).start()
+        if not ready.wait(15) or result != ["READY"]:
+            self._process.kill()
+            self._process.wait()
+            raise RuntimeError("Subtitle window failed to start; check the desktop session and log.")
+        self._sender = threading.Thread(target=self._send, name="voxpill-subtitles", daemon=True)
+        self._sender.start()
+
+    def _send(self):
+        try:
+            while True:
+                event = self._queue.get()
+                self._process.stdin.write(json.dumps(event, ensure_ascii=False) + "\n")
+                self._process.stdin.flush()
+                if event[0] == "close":
+                    break
+        except (OSError, ValueError) as exc:
+            self._say(f"[overlay] subtitle process stopped: {exc}")
+        finally:
+            self._process.stdin.close()
+
+    def show(self, session):
+        self._queue.put(("show", session, ""))
+
+    def partial(self, session, text):
+        self._queue.put(("partial", session, text))
+
+    def finalizing(self, session, text=""):
+        self._queue.put(("finalizing", session, text))
+
+    def committed(self, session, text):
+        self._queue.put(("committed", session, text))
+
+    def dismiss(self, session):
+        self._queue.put(("dismiss", session, ""))
+
+    def close(self):
+        self._queue.put(("close", -1, ""))
+        self._sender.join(timeout=2)
+        try:
+            self._process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self._process.kill()
+            self._process.wait()
+        self._process.stdout.close()
+
+
+def run_worker(theme="auto", smoke_dir=None):
+    """Run a GUI event loop on this helper's main thread; EOF exits with parent."""
+    from overlay_native import MacPanel, X11Panel
+    if sys.stdout is None:
+        sys.stdout = os.fdopen(1, "w", encoding="utf-8", closefd=False)
+    if sys.stdin is None:
+        sys.stdin = os.fdopen(0, "r", encoding="utf-8", closefd=False)
+    panel = MacPanel(theme) if sys.platform == "darwin" else X11Panel(theme)
+    state = SubtitleState()
+    events = queue.SimpleQueue()
+    failure = []
+    start = time.monotonic()
+    smoke_step = 0
+    if smoke_dir:
+        Path(smoke_dir).mkdir(parents=True, exist_ok=True)
+        panel.prepare_focus_test()
+    else:
+        def read_commands():
+            try:
+                for line in sys.stdin:
+                    events.put(json.loads(line))
+            finally:
+                events.put(("close", -1, ""))
+        threading.Thread(target=read_commands, daemon=True).start()
+    print("READY", flush=True)
+
+    def tick():
+        nonlocal smoke_step
+        try:
+            now = time.monotonic()
+            if smoke_dir:
+                elapsed = now - start
+                if smoke_step == 0:
+                    events.put(("show", 1, ""))
+                    events.put(("partial", 1, "你好，VoxPill 正在显示实时字幕。Speak, release, typed."))
+                    smoke_step = 1
+                elif smoke_step == 1 and elapsed > 2.8:
+                    panel.assert_focus_unchanged()
+                    assert state.text, "No partial subtitle rendered"
+                    panel.snapshot(Path(smoke_dir) / "partial.png")
+                    events.put(("finalizing", 1, "最终字幕：你好，世界。Hello, world!"))
+                    smoke_step = 2
+                elif smoke_step == 2 and elapsed > 3.2:
+                    panel.assert_focus_unchanged()
+                    panel.snapshot(Path(smoke_dir) / "final.png")
+                    events.put(("committed", 1, state.text))
+                    smoke_step = 3
+                elif smoke_step == 3 and elapsed > 4.4:
+                    assert state.status == "hidden", "Subtitle did not retire"
+                    panel.assert_focus_unchanged()
+                    events.put(("show", 2, ""))
+                    events.put(("partial", 1, "stale subtitle"))
+                    events.put(("dismiss", 2, ""))
+                    smoke_step = 4
+                elif smoke_step == 4 and elapsed > 4.8:
+                    assert state.status == "hidden"
+                    panel.close()
+                    return
+            while not events.empty():
+                command, session, text = events.get()
+                if command == "close":
+                    panel.close()
+                    return
+                state.apply(command, session, text, now)
+            state.tick(now)
+            panel.render(state)
+            panel.after(16, tick)
+        except BaseException as exc:
+            failure.append(exc)
+            panel.close()
+
+    panel.after(16, tick)
+    panel.run()
+    if failure:
+        raise failure[0]

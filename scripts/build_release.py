@@ -25,6 +25,8 @@ def main():
     subprocess.run([str(binary), "--smoke-hotkey-settings"], check=True, timeout=60)
     subprocess.run([str(binary), "--smoke-models"], check=True, timeout=120)
     subprocess.run([str(binary), "--smoke-desktop"], check=True, timeout=60)
+    subprocess.run([str(binary), "--smoke-overlay", str(ROOT / "build/overlay-smoke")], check=True, timeout=30)
+    subprocess.run([str(binary), "--smoke-overlay-client"], check=True, timeout=30)
     output = ROOT / "dist/release"
     output.mkdir(parents=True, exist_ok=True)
     stem = f"VoxPill-{version}-{platform.system().lower()}-{platform.machine().lower()}"

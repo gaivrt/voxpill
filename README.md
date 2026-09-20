@@ -37,7 +37,7 @@ preview without stealing focus.
 
 ## Quick start
 
-### macOS / Linux preview (1.1.0)
+### macOS / Linux preview (1.1.1)
 
 Download the matching archive from [GitHub Releases](https://github.com/gaivrt/voxpill/releases).
 macOS builds target Apple Silicon (macOS 14+) and Intel (macOS 15+); Linux builds target x86_64, glibc 2.35+ and X11.
@@ -50,8 +50,11 @@ terminal when running from source); grant Input Monitoring if requested, then
 restart. The preview is unsigned/not notarized; approve first launch through
 Finder / Privacy & Security. Linux Wayland is currently unsupported.
 
-These platforms support recording and final insertion, with tray/menu-bar
-controls where available. The native transcript overlay remains Windows-only.
+These platforms support recording, live floating subtitles and final insertion,
+with tray/menu-bar controls where available. Subtitles show recording/recognition
+status, reveal previews character by character, display the final text and then
+retire automatically. They do not take keyboard focus or intercept mouse clicks.
+Install a CJK font on Linux if needed (`sudo apt install fonts-noto-cjk` on Ubuntu).
 Keep the original window focused until insertion finishes: on macOS/Linux a
 focus change cancels insertion. If the desktop has no supported tray menu,
 use terminal mode and Ctrl+C to quit. Edit the hotkey by name in settings
@@ -186,9 +189,9 @@ Download the models, then run:
 
 The release build creates:
 
-- `dist\release\VoxPill-1.1.0-portable.zip` — unzip and launch
+- `dist\release\VoxPill-1.1.1-portable.zip` — unzip and launch
   `VoxPill.exe`; no Python or `uv` is required.
-- `dist\release\VoxPill-1.1.0-setup.exe` — per-user installer with a Start
+- `dist\release\VoxPill-1.1.1-setup.exe` — per-user installer with a Start
   Menu entry, Windows Search discovery, uninstall support, and an optional
   login-start shortcut (enabled by default).
 - `dist\release\SHA256SUMS.txt` — hashes for release verification.

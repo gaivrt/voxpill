@@ -18,6 +18,28 @@ PC 麦克风 → static Paraformer accumulated-audio previews + final → 文本
 
     uv run python -u main.py
 """
+import sys
+
+# GUI helpers own their process main thread and never load ASR or start a tray.
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] in {"--overlay-worker", "--smoke-overlay", "--smoke-overlay-client"}:
+    from overlay_unix import run_worker
+    if sys.argv[1] == "--smoke-overlay-client":
+        import time
+        from overlay_unix import LiquidGlassOverlay
+        client = LiquidGlassOverlay(theme="dark")
+        client.show(1)
+        client.partial(1, "跨进程字幕 IPC smoke test")
+        time.sleep(0.3)
+        client.finalizing(1, "字幕完成")
+        client.committed(1, "字幕完成")
+        client.close()
+        assert client._process.returncode == 0
+    elif sys.argv[1] == "--smoke-overlay":
+        run_worker("dark", sys.argv[2])
+    else:
+        run_worker(sys.argv[2])
+    raise SystemExit(0)
+
 from array import array
 from dataclasses import dataclass, field
 import itertools
@@ -43,7 +65,10 @@ from asr import (
     run_pseudo_streaming_preview,
 )
 from process_qos import enable_high_qos
-from overlay import LiquidGlassOverlay
+if sys.platform == "win32":
+    from overlay import LiquidGlassOverlay
+else:
+    from overlay_unix import LiquidGlassOverlay
 
 
 
@@ -297,12 +322,11 @@ def main():
                 args=(job,),
                 name=f"voxpill-capture-{session_id}",
             )
-            if sys.platform == "win32":
-                launch_worker(
-                    preview_job,
-                    args=(job,),
-                    name=f"voxpill-preview-{session_id}",
-                )
+            launch_worker(
+                preview_job,
+                args=(job,),
+                name=f"voxpill-preview-{session_id}",
+            )
             set_icon(True)
             say("● REC")
         except Exception:
@@ -327,6 +351,7 @@ def main():
                 say(f"[audio] 关闭录音异常：{e}")
         if job is not None:
             job.chunks.put(None)
+            glass.finalizing(job.session_id)
         return job
 
     def poll_loop():
