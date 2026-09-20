@@ -44,8 +44,8 @@ class DesktopPortabilityTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "X11"):
                 desktop._display()
 
-    def test_focus_changes_fail_closed(self):
-        with patch.object(desktop, "foreground_target", return_value=(123, 456)):
+    def test_linux_focus_changes_fail_closed(self):
+        with patch.object(desktop.sys, "platform", "linux"), patch.object(desktop, "foreground_target", return_value=(123, 456)):
             self.assertTrue(desktop.activate_target((123, 456)))
             self.assertFalse(desktop.activate_target((123, 789)))
             self.assertFalse(desktop.activate_target(None))

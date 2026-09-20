@@ -66,6 +66,10 @@ def show_dialog(current, save, stop_flag, *, smoke=False):
         if stop_flag.is_set():
             root.destroy()
             return
+        if listener is not None and not listener.is_alive():
+            messagebox.showerror("无法监听按键", "请检查辅助功能与输入监控权限，然后重新打开设置。", parent=root)
+            root.destroy()
+            return
         while not events.empty():
             native, down = events.get()
             result = capture.feed(native, down)

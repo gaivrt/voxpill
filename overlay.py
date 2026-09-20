@@ -649,6 +649,8 @@ class LiquidGlassOverlay:
         if self._drain(hwnd, user32):
             user32.DestroyWindow(hwnd)
             return
+        if self._state["phase"] == "hidden":
+            return
         result = self._advance_frame(time.perf_counter(), lambda layout: self._target_geometry(user32, layout))
         if result is None:
             if self._state["phase"] == "hidden":

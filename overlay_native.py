@@ -176,7 +176,6 @@ class MacPanel:
         self.theme, self.session = theme, None
         self.visible = False
         self.screen = A.NSScreen.mainScreen()
-        self.last_frame = None
         self.recorded_frames = []
         self.recorded_geometry = []
         self.next_capture = 0
@@ -219,9 +218,6 @@ class MacPanel:
             self.visible = False
             return
         frame, x, y, alpha = result
-        self.last_frame = frame
-        self.last_alpha = alpha
-        self.last_geometry = (x, y, frame.width, frame.height)
         stream = io.BytesIO()
         frame.save(stream, format="PNG", compress_level=1)
         raw = stream.getvalue()
